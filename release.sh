@@ -11,7 +11,7 @@ rm -rf tmp/ || true
 rm agent.jar || true
 mkdir tmp
 
-unzip -q target/agent-0.1.0-SNAPSHOT.jar -d tmp/
+unzip -q target/hookd-0.1.0-SNAPSHOT.jar -d tmp/
 jar cmf META-INF/MANIFEST.MF agent.jar -C tmp .
 
 VERSION="$(clojure -X:release ivarref.pom-patch/set-patch-version! :patch :commit-count)"
