@@ -4,7 +4,7 @@
   <groupId>com.github.ivarref</groupId>
   <artifactId>hookd</artifactId>
   <packaging>jar</packaging>
-  <version>0.1.7</version>
+  <version>0.1.9</version>
   <name>hookd</name>
   <description>FIXME: write description</description>
   <url>http://example.com/FIXME</url>
