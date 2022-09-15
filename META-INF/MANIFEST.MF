@@ -1,0 +1,11 @@
+Manifest-Version: 1.0
+Created-By: Leiningen 2.9.8
+Built-By: ire
+Build-Jdk: 17.0.4
+Leiningen-Project-ArtifactId: hookd
+Leiningen-Project-GroupId: com.github.ivarref
+Leiningen-Project-Version: 0.1.0-SNAPSHOT
+Agent-Class: com.github.ivarref.hookd.JavaAgent
+Can-Redefine-Classes: true
+Can-Retransform-Classes: true
+Premain-Class: com.github.ivarref.hookd.JavaAgent
