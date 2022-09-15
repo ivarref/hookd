@@ -68,7 +68,7 @@ public class JavaAgent {
         if (consumer != null) {
             consumer.accept(res);
         } else {
-            System.out.println("Agent consume error: No consumer registered for " + clazzName + "/" + methodName);
+            LOGGER.log(Level.SEVERE, "Agent consume error. No consumer registered for " + clazzName + "/" + methodName);
         }
     }
 
@@ -146,15 +146,9 @@ public class JavaAgent {
                         }
                     } else {
                         CtMethod m = cc.getDeclaredMethod(targetMethodName);
-                        m.addLocalVariable("startTime", CtClass.longType);
-                        m.insertBefore("startTime = System.currentTimeMillis();");
-                        StringBuilder endBlock = new StringBuilder();
-                        m.addLocalVariable("endTime", CtClass.longType);
-                        endBlock.append("endTime = System.currentTimeMillis();");
-                        endBlock.append("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
+                        m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
                                 "\"" + this.targetMethodName + "\"" +
                                 ",$_);");
-                        m.insertAfter(endBlock.toString());
                     }
                     byteCode = cc.toBytecode();
                     cc.detach();
