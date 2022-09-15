@@ -14,4 +14,4 @@ mkdir tmp
 unzip -q target/agent-0.1.0-SNAPSHOT.jar -d tmp/
 jar cmf META-INF/MANIFEST.MF agent.jar -C tmp .
 
-clj -T:deploy
+clj -T:install
