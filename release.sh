@@ -14,4 +14,14 @@ mkdir tmp
 unzip -q target/agent-0.1.0-SNAPSHOT.jar -d tmp/
 jar cmf META-INF/MANIFEST.MF agent.jar -C tmp .
 
-clj -T:install
+VERSION="$(clojure -X:release ivarref.pom-patch/set-patch-version! :patch :commit-count)"
+
+#clojure -T:install
+
+git add pom.xml README.md
+git commit -m"Release $VERSION"
+git tag -a v"$VERSION" -m "Release v$VERSION"
+git push --follow-tags --force
+
+clojure -X:deploy
+echo "Released $VERSION"
