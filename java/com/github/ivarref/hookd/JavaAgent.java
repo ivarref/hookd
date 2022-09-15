@@ -140,7 +140,7 @@ public class JavaAgent {
                     CtClass cc = cp.get(clazz);
                     if (targetMethodName.equalsIgnoreCase("::Constructor")) {
                         for (CtConstructor m : cc.getConstructors()) {
-                            m.insertAfter("com.github.ivarref.spa.JavaAgent.consume(\"" + this.targetClassName + "\"," +
+                            m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
                                     "\"" + this.targetMethodName + "\"" +
                                     ",this);");
                         }
@@ -151,7 +151,7 @@ public class JavaAgent {
                         StringBuilder endBlock = new StringBuilder();
                         m.addLocalVariable("endTime", CtClass.longType);
                         endBlock.append("endTime = System.currentTimeMillis();");
-                        endBlock.append("com.github.ivarref.spa.JavaAgent.consume(\"" + this.targetClassName + "\"," +
+                        endBlock.append("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
                                 "\"" + this.targetMethodName + "\"" +
                                 ",$_);");
                         m.insertAfter(endBlock.toString());
