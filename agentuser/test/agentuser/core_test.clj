@@ -1,7 +1,25 @@
 (ns agentuser.core-test
-  (:require [clojure.test :refer :all]
-            [agentuser.core :refer :all]))
+  (:require [clojure.test :refer [deftest is]]
+            [com.github.ivarref.hookd :as hookd])
+  (:import (com.github.ivarref SomeClass)))
 
 (deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+  (let [atm (atom nil)
+        cnt (atom 0)]
+    (hookd/install-return-consumer!
+      "com.github.ivarref.SomeClass"
+      "::Constructor"
+      (fn [obj]
+        (swap! cnt inc)
+        (reset! atm obj)))
+    (let [someInst (SomeClass.)
+          int-value (atom nil)]
+      (hookd/install-return-consumer!
+        "com.github.ivarref.SomeClass"
+        "returnInt"
+        (fn [an-int]
+          (reset! int-value an-int)))
+      (is (= 3 (.returnInt someInst)))
+      (is (= 3 @int-value))
+      (is (= @atm someInst))
+      (is (= 1 @cnt)))))

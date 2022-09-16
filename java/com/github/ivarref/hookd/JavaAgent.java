@@ -196,7 +196,7 @@ public class JavaAgent {
                         CtMethod m = cc.getDeclaredMethod(targetMethodName);
                         m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
                                 "\"" + this.targetMethodName + "\"" +
-                                ",$_);");
+                                ",(Object)$_);");
                     }
                     byteCode = cc.toBytecode();
                     classes.put(targetClassName, new ByteHolder(byteCode));

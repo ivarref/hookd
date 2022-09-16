@@ -15,3 +15,9 @@ unzip -q target/hookd-0.1.0-SNAPSHOT.jar -d tmp/
 jar cmf META-INF/MANIFEST.MF hookd.jar -C tmp .
 
 clojure -T:install
+
+cd agentuser
+
+env JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true" lein test || true
+
+cd $DIR
