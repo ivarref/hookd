@@ -4,7 +4,7 @@
   <groupId>com.github.ivarref</groupId>
   <artifactId>hookd</artifactId>
   <packaging>jar</packaging>
-  <version>0.1.11</version>
+  <version>0.1.13</version>
   <name>hookd</name>
   <description> Consume return values of arbitrary Java methods in Clojure</description>
   <url>https://github.com/ivarref/hookd</url>
