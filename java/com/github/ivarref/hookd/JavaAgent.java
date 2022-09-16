@@ -191,7 +191,6 @@ public class JavaAgent {
                                 ",$_);");
                     }
                     byteCode = cc.toBytecode();
-                    cc.detach();
                     LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
                 } catch (Throwable e) {
                     if (e instanceof NotFoundException) {
@@ -214,7 +213,6 @@ public class JavaAgent {
                             "\"" + this.targetMethodName + "\"" +
                             ",this, $args);");
                     byteCode = cc.toBytecode();
-                    cc.detach();
                     LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
                 } catch (Throwable e) {
                     if (e instanceof NotFoundException) {
