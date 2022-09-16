@@ -43,25 +43,33 @@ public class JavaAgent {
         }
     }
 
-    public static ConcurrentHashMap<String, Consumer> consumers = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, Consumer> returnConsumers = new ConcurrentHashMap<>();
     public static ConcurrentHashMap<String, BiConsumer> preConsumers = new ConcurrentHashMap<>();
+
+    public static ConcurrentHashMap<String, ByteHolder> classes = new ConcurrentHashMap<>();
+
+    public static class ByteHolder {
+        public final byte[] bytes;
+
+        public ByteHolder(byte[] bytes) {
+            this.bytes = bytes;
+        }
+    }
 
     public static synchronized void addPostHook(String clazzName, String methodName, Consumer consumer) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, InterruptedException {
         String k = clazzName + "::" + methodName;
-        if (consumers.containsKey(k)) {
-            consumers.put(k, consumer);
+        if (returnConsumers.containsKey(k)) {
+            returnConsumers.put(k, consumer);
         } else {
-            CountDownLatch theLatch = new CountDownLatch(1);
-            latch.set(theLatch);
-            long pid = ProcessHandle.current().pid();
+            latch.set(new CountDownLatch(1));
             op.set("posthook");
             classNameInput.set(clazzName);
             methodNameInput.set(methodName);
-            consumers.put(k, consumer);
-            VirtualMachine jvm = VirtualMachine.attach(pid + "");
+            returnConsumers.put(k, consumer);
+            VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
             jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
             jvm.detach();
-            if (false == theLatch.await(30, TimeUnit.SECONDS)) {
+            if (false == latch.get().await(30, TimeUnit.SECONDS)) {
                 String msg = "Timeout waiting for JavaAgent to finish";
                 LOGGER.log(Level.SEVERE, msg);
                 throw new RuntimeException(msg);
@@ -74,17 +82,15 @@ public class JavaAgent {
         if (preConsumers.containsKey(k)) {
             preConsumers.put(k, consumer);
         } else {
-            CountDownLatch theLatch = new CountDownLatch(1);
-            latch.set(theLatch);
-            long pid = ProcessHandle.current().pid();
+            latch.set(new CountDownLatch(1));
             op.set("prehook");
             classNameInput.set(clazzName);
             methodNameInput.set(methodName);
             preConsumers.put(k, consumer);
-            VirtualMachine jvm = VirtualMachine.attach(pid + "");
+            VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
             jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
             jvm.detach();
-            if (false == theLatch.await(30, TimeUnit.SECONDS)) {
+            if (false == latch.get().await(30, TimeUnit.SECONDS)) {
                 String msg = "Timeout waiting for JavaAgent to finish";
                 LOGGER.log(Level.SEVERE, msg);
                 throw new RuntimeException(msg);
@@ -93,7 +99,7 @@ public class JavaAgent {
     }
 
     public static void consume(String clazzName, String methodName, Object res) {
-        Consumer consumer = consumers.get(clazzName + "::" + methodName);
+        Consumer consumer = returnConsumers.get(clazzName + "::" + methodName);
         if (consumer != null) {
             consumer.accept(res);
         } else {
@@ -111,7 +117,7 @@ public class JavaAgent {
     }
 
     public static void transformClass(String op, String className, String methodName, Instrumentation inst) {
-        LOGGER.log(Level.FINEST, "transformClass starting for " + className + "/" + methodName);
+        LOGGER.log(Level.INFO, "transformClass starting for " + className + "/" + methodName + ", op: " + op);
         Class<?> targetCls = null;
         ClassLoader targetClassLoader = null;
         try {
@@ -173,11 +179,13 @@ public class JavaAgent {
             }
             ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
             ClassPool.getDefault().appendSystemPath();
+            ClassPool cp = ClassPool.getDefault();
+            for (String key : classes.keySet()) {
+                cp.insertClassPath(new ByteArrayClassPath(key, classes.get(key).bytes));
+            }
             if (loader.equals(targetClassLoader) && op.equalsIgnoreCase("posthook")) {
                 try {
-                    ClassPool cp = ClassPool.getDefault();
-                    String clazz = targetClassName;
-                    CtClass cc = cp.get(clazz);
+                    CtClass cc = cp.get(targetClassName);
                     if (targetMethodName.equalsIgnoreCase("::Constructor")) {
                         for (CtConstructor m : cc.getConstructors()) {
                             m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
@@ -191,6 +199,8 @@ public class JavaAgent {
                                 ",$_);");
                     }
                     byteCode = cc.toBytecode();
+                    classes.put(targetClassName, new ByteHolder(byteCode));
+                    cc.detach();
                     LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
                 } catch (Throwable e) {
                     if (e instanceof NotFoundException) {
@@ -202,10 +212,8 @@ public class JavaAgent {
                     }
                     throw new RuntimeException(e);
                 }
-            }
-            else if (loader.equals(targetClassLoader) && op.equalsIgnoreCase("prehook")) {
+            } else if (loader.equals(targetClassLoader) && op.equalsIgnoreCase("prehook")) {
                 try {
-                    ClassPool cp = ClassPool.getDefault();
                     String clazz = targetClassName;
                     CtClass cc = cp.get(clazz);
                     CtMethod m = cc.getDeclaredMethod(targetMethodName);
@@ -213,6 +221,8 @@ public class JavaAgent {
                             "\"" + this.targetMethodName + "\"" +
                             ",this, $args);");
                     byteCode = cc.toBytecode();
+                    classes.put(targetClassName, new ByteHolder(byteCode));
+                    cc.detach();
                     LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
                 } catch (Throwable e) {
                     if (e instanceof NotFoundException) {

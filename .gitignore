@@ -15,4 +15,5 @@ pom.xml.asc
 .clj-kondo/.cache/
 tmp/
 .cpcache/
-agentuser/
+agentuser/.idea/
+agentuser/*.iml

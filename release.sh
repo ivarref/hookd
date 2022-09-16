@@ -16,12 +16,12 @@ jar cmf META-INF/MANIFEST.MF agent.jar -C tmp .
 
 VERSION="$(clojure -X:release ivarref.pom-patch/set-patch-version! :patch :commit-count)"
 
-#clojure -T:install
+clojure -T:install
 
-git add pom.xml README.md
-git commit -m"Release $VERSION"
-git tag -a v"$VERSION" -m "Release v$VERSION"
-git push --follow-tags --force
-
-clojure -X:deploy
-echo "Released $VERSION"
+#git add pom.xml README.md
+#git commit -m"Release $VERSION"
+#git tag -a v"$VERSION" -m "Release v$VERSION"
+#git push --follow-tags --force
+#
+#clojure -X:deploy
+#echo "Released $VERSION"

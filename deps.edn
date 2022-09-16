@@ -2,10 +2,10 @@
                      :exec-fn    deps-deploy.deps-deploy/deploy
                      :exec-args  {:installer      :local
                                   :sign-releases? false
-                                  :artifact       "agent.jar"}}
+                                  :artifact       "hookd.jar"}}
            :deploy  {:extra-deps {slipset/deps-deploy {:mvn/version "0.2.0"}}
                      :exec-fn    deps-deploy.deps-deploy/deploy
                      :exec-args  {:installer      :remote
                                   :sign-releases? false
-                                  :artifact       "agent.jar"}}
+                                  :artifact       "hookd.jar"}}
            :release {:extra-deps {ivarref/pom-patch {:mvn/version "0.1.16"}}}}}
