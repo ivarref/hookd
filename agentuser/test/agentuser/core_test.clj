@@ -5,20 +5,20 @@
 
 (deftest a-test
   (let [atm (atom nil)
-        cnt (atom 0)]
+        cnt (atom 0)
+        int-value (atom nil)]
     (hookd/install-return-consumer!
       "com.github.ivarref.SomeClass"
       "::Constructor"
       (fn [obj]
         (swap! cnt inc)
         (reset! atm obj)))
-    (let [someInst (SomeClass.)
-          int-value (atom nil)]
-      (hookd/install-return-consumer!
-        "com.github.ivarref.SomeClass"
-        "returnInt"
-        (fn [an-int]
-          (reset! int-value an-int)))
+    (hookd/install-return-consumer!
+      "com.github.ivarref.SomeClass"
+      "returnInt"
+      (fn [an-int]
+        (reset! int-value an-int)))
+    (let [someInst (SomeClass.)]
       (is (= 3 (.returnInt someInst)))
       (is (= 3 @int-value))
       (is (= @atm someInst))
