@@ -1,12 +1,8 @@
 package com.github.ivarref.hookd;
 
-import com.sun.tools.attach.AgentInitializationException;
-import com.sun.tools.attach.AgentLoadException;
-import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import javassist.*;
 
-import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
@@ -27,97 +23,85 @@ public class JavaAgent {
         LOGGER.log(Level.INFO, "Agent premain doing nothing");
     }
 
-    public static final AtomicReference<String> op = new AtomicReference();
-
     public static final AtomicReference<String> classNameInput = new AtomicReference();
-
-    public static final AtomicReference<String> methodNameInput = new AtomicReference();
-
     public static final AtomicReference<CountDownLatch> latch = new AtomicReference<>();
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
         try {
-            transformClass(op.get(), classNameInput.get(), methodNameInput.get(), inst);
+            transformClass(classNameInput.get(), inst);
         } finally {
             latch.get().countDown();
         }
     }
 
-    public static ConcurrentHashMap<String, Consumer> returnConsumers = new ConcurrentHashMap<>();
-    public static ConcurrentHashMap<String, BiConsumer> preConsumers = new ConcurrentHashMap<>();
+    public static final ConcurrentHashMap<String, TransformConfig> ret = new ConcurrentHashMap<>();
+    public static final ConcurrentHashMap<String, TransformConfig> pre = new ConcurrentHashMap<>();
 
-    public static ConcurrentHashMap<String, ByteHolder> classes = new ConcurrentHashMap<>();
+    public static class TransformConfig {
+        public final ConcurrentHashMap<String, BiConsumer> consumers = new ConcurrentHashMap<>();
+    }
 
-    public static class ByteHolder {
-        public final byte[] bytes;
+    public static void clear(String clazz) throws Exception {
+        if (ret.containsKey(clazz)) {
+            ret.remove(clazz);
+        }
+        if (pre.containsKey(clazz)) {
+            pre.remove(clazz);
+        }
+        attachAndTransform(clazz);
+    }
 
-        public ByteHolder(byte[] bytes) {
-            this.bytes = bytes;
+    public static void attachAndTransform(String clazz) throws Exception {
+        latch.set(new CountDownLatch(1));
+        classNameInput.set(clazz);
+        VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
+        jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
+        jvm.detach();
+        if (false == latch.get().await(30, TimeUnit.SECONDS)) {
+            String msg = "Timeout waiting for JavaAgent to finish";
+            LOGGER.log(Level.SEVERE, msg);
+            throw new RuntimeException(msg);
         }
     }
 
-    public static synchronized void addPostHook(String clazzName, String methodName, Consumer consumer) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, InterruptedException {
-        String k = clazzName + "::" + methodName;
-        if (returnConsumers.containsKey(k)) {
-            returnConsumers.put(k, consumer);
-        } else {
-            latch.set(new CountDownLatch(1));
-            op.set("posthook");
-            classNameInput.set(clazzName);
-            methodNameInput.set(methodName);
-            returnConsumers.put(k, consumer);
-            VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
-            jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
-            jvm.detach();
-            if (false == latch.get().await(30, TimeUnit.SECONDS)) {
-                String msg = "Timeout waiting for JavaAgent to finish";
-                LOGGER.log(Level.SEVERE, msg);
-                throw new RuntimeException(msg);
-            }
+    public static synchronized void addReturnConsumer(String clazzName, String methodName, Consumer consumer) throws Exception {
+        if (!ret.containsKey(clazzName)) {
+            ret.put(clazzName, new TransformConfig());
         }
+        TransformConfig classConfig = ret.get(clazzName);
+        classConfig.consumers.put(methodName, (o, o2) -> consumer.accept(o2));
+        attachAndTransform(clazzName);
     }
 
     public static synchronized void addPreHook(String clazzName, String methodName, BiConsumer consumer) throws Exception {
-        String k = clazzName + "::" + methodName;
-        if (preConsumers.containsKey(k)) {
-            preConsumers.put(k, consumer);
-        } else {
-            latch.set(new CountDownLatch(1));
-            op.set("prehook");
-            classNameInput.set(clazzName);
-            methodNameInput.set(methodName);
-            preConsumers.put(k, consumer);
-            VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
-            jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
-            jvm.detach();
-            if (false == latch.get().await(30, TimeUnit.SECONDS)) {
-                String msg = "Timeout waiting for JavaAgent to finish";
-                LOGGER.log(Level.SEVERE, msg);
-                throw new RuntimeException(msg);
-            }
+        if (!pre.containsKey(clazzName)) {
+            pre.put(clazzName, new TransformConfig());
         }
+        TransformConfig classConfig = pre.get(clazzName);
+        classConfig.consumers.put(methodName, consumer);
+        attachAndTransform(clazzName);
     }
 
-    public static void consume(String clazzName, String methodName, Object res) {
-        Consumer consumer = returnConsumers.get(clazzName + "::" + methodName);
+    public static void consumeReturn(String clazzName, String methodName, Object res) {
+        BiConsumer consumer = ret.get(clazzName).consumers.get(methodName);
         if (consumer != null) {
-            consumer.accept(res);
+            consumer.accept(null, res);
         } else {
-            LOGGER.log(Level.SEVERE, "Agent consume error. No consumer registered for " + clazzName + "/" + methodName);
+            LOGGER.log(Level.SEVERE, "Agent consumeReturn error. No consumeReturn registered for " + clazzName + "/" + methodName);
         }
     }
 
-    public static void preConsume(String clazzName, String methodName, Object t, Object[] args) {
-        BiConsumer consumer = preConsumers.get(clazzName + "::" + methodName);
+    public static void consumePre(String clazzName, String methodName, Object t, Object[] args) {
+        BiConsumer consumer = pre.get(clazzName).consumers.get(methodName);
         if (consumer != null) {
             consumer.accept(t, args);
         } else {
-            LOGGER.log(Level.SEVERE, "Agent consume error. No pre-consumer registered for " + clazzName + "/" + methodName);
+            LOGGER.log(Level.SEVERE, "Agent preConsume error. No preConsume registered for " + clazzName + "/" + methodName);
         }
     }
 
-    public static void transformClass(String op, String className, String methodName, Instrumentation inst) {
-        LOGGER.log(Level.INFO, "transformClass starting for " + className + "/" + methodName + ", op: " + op);
+    public static void transformClass(String className, Instrumentation inst) {
+        LOGGER.log(Level.FINE, "transformClass starting for " + className);
         Class<?> targetCls = null;
         ClassLoader targetClassLoader = null;
         try {
@@ -127,23 +111,28 @@ public class JavaAgent {
         }
         if (targetCls != null) {
             targetClassLoader = targetCls.getClassLoader();
-            transform(op, targetCls, methodName, targetClassLoader, inst);
+            transform(targetCls, targetClassLoader, inst);
             return;
         }
         for (Class<?> clazz : inst.getAllLoadedClasses()) {
             if (clazz.getName().equals(className)) {
                 targetCls = clazz;
                 targetClassLoader = targetCls.getClassLoader();
-                transform(op, targetCls, methodName, targetClassLoader, inst);
+                transform(targetCls, targetClassLoader, inst);
                 return;
             }
         }
         throw new RuntimeException("Agent failed to find class [" + className + "]");
     }
 
-    public static void transform(String op, Class<?> clazz, String methodName, ClassLoader classLoader, Instrumentation instrumentation) {
-        ClassTransformer dt = new ClassTransformer(op, clazz.getName(), methodName, classLoader);
-        instrumentation.addTransformer(dt, true);
+    public static final ConcurrentHashMap<String, ClassTransformer> transformers = new ConcurrentHashMap<>();
+
+    public static void transform(Class<?> clazz, ClassLoader classLoader, Instrumentation instrumentation) {
+        if (false == transformers.containsKey(clazz.getName())) {
+            ClassTransformer dt = new ClassTransformer(clazz.getName(), classLoader);
+            transformers.put(clazz.getName(), dt);
+            instrumentation.addTransformer(dt, true);
+        }
         try {
             instrumentation.retransformClasses(clazz);
         } catch (Throwable ex) {
@@ -154,15 +143,57 @@ public class JavaAgent {
     public static class ClassTransformer implements ClassFileTransformer {
         private final String targetClassName;
         private final ClassLoader targetClassLoader;
-        private final String targetMethodName;
 
-        private final String op;
-
-        public ClassTransformer(String op, String targetClassName, String methodName, ClassLoader targetClassLoader) {
-            this.op = op;
+        public ClassTransformer(String targetClassName, ClassLoader targetClassLoader) {
             this.targetClassName = targetClassName;
             this.targetClassLoader = targetClassLoader;
-            this.targetMethodName = methodName;
+        }
+
+        public byte[] throwingTransform(
+                ClassLoader loader,
+                String className,
+                Class<?> classBeingRedefined,
+                ProtectionDomain protectionDomain,
+                byte[] byteCode) throws Exception {
+            String finalTargetClassName = this.targetClassName.replaceAll("\\.", "/");
+            if (!className.equals(finalTargetClassName) || !loader.equals(targetClassLoader)) {
+                return byteCode;
+            }
+            ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
+            ClassPool.getDefault().appendSystemPath();
+            ClassPool cp = ClassPool.getDefault();
+
+            CtClass cc = cp.get(targetClassName);
+
+            if (ret.containsKey(targetClassName)) {
+                for (String method : ret.get(targetClassName).consumers.keySet()) {
+                    if (method.equalsIgnoreCase("::Constructor")) {
+                        for (CtConstructor m : cc.getConstructors()) {
+                            m.insertAfter("com.github.ivarref.hookd.JavaAgent.consumeReturn(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",this);");
+                        }
+                    } else {
+                        CtMethod m = cc.getDeclaredMethod(method);
+                        m.insertAfter("com.github.ivarref.hookd.JavaAgent.consumeReturn(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",$_);");
+                    }
+                }
+            }
+
+            if (pre.containsKey(targetClassName)) {
+                for (String method : pre.get(targetClassName).consumers.keySet()) {
+                    if (method.equalsIgnoreCase("::Constructor")) {
+                        for (CtConstructor m : cc.getConstructors()) {
+                            m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",this, $args);");
+                        }
+                    } else {
+                        CtMethod m = cc.getDeclaredMethod(method);
+                        m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ", this, $args);");
+                    }
+                }
+            }
+
+            byteCode = cc.toBytecode();
+            cc.detach();
+            return byteCode;
         }
 
         @Override
@@ -172,70 +203,12 @@ public class JavaAgent {
                 Class<?> classBeingRedefined,
                 ProtectionDomain protectionDomain,
                 byte[] classfileBuffer) {
-            byte[] byteCode = classfileBuffer;
-            String finalTargetClassName = this.targetClassName.replaceAll("\\.", "/");
-            if (!className.equals(finalTargetClassName)) {
-                return byteCode;
+            try {
+                return throwingTransform(loader, className, classBeingRedefined, protectionDomain, classfileBuffer);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Could not transform class " + className, e);
+                throw new RuntimeException(e);
             }
-            ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
-            ClassPool.getDefault().appendSystemPath();
-            ClassPool cp = ClassPool.getDefault();
-            for (String key : classes.keySet()) {
-                cp.insertClassPath(new ByteArrayClassPath(key, classes.get(key).bytes));
-            }
-            if (loader.equals(targetClassLoader) && op.equalsIgnoreCase("posthook")) {
-                try {
-                    CtClass cc = cp.get(targetClassName);
-                    if (targetMethodName.equalsIgnoreCase("::Constructor")) {
-                        for (CtConstructor m : cc.getConstructors()) {
-                            m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
-                                    "\"" + this.targetMethodName + "\"" +
-                                    ",this);");
-                        }
-                    } else {
-                        CtMethod m = cc.getDeclaredMethod(targetMethodName);
-                        m.insertAfter("com.github.ivarref.hookd.JavaAgent.consume(\"" + this.targetClassName + "\"," +
-                                "\"" + this.targetMethodName + "\"" +
-                                ",(Object)$_);");
-                    }
-                    byteCode = cc.toBytecode();
-                    classes.put(targetClassName, new ByteHolder(byteCode));
-                    cc.detach();
-                    LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
-                } catch (Throwable e) {
-                    if (e instanceof NotFoundException) {
-                        LOGGER.log(Level.SEVERE, "Agent did not find: " + e.getMessage(), e);
-                    } else if (e instanceof CannotCompileException) {
-                        LOGGER.log(Level.SEVERE, "Agent could not compile: " + e.getMessage(), e);
-                    } else {
-                        LOGGER.log(Level.SEVERE, "Transforming class " + this.targetClassName + " failed. Message: " + e.getMessage() + ", class: " + e.getClass().getName(), e);
-                    }
-                    throw new RuntimeException(e);
-                }
-            } else if (loader.equals(targetClassLoader) && op.equalsIgnoreCase("prehook")) {
-                try {
-                    String clazz = targetClassName;
-                    CtClass cc = cp.get(clazz);
-                    CtMethod m = cc.getDeclaredMethod(targetMethodName);
-                    m.insertBefore("com.github.ivarref.hookd.JavaAgent.preConsume(\"" + this.targetClassName + "\"," +
-                            "\"" + this.targetMethodName + "\"" +
-                            ",this, $args);");
-                    byteCode = cc.toBytecode();
-                    classes.put(targetClassName, new ByteHolder(byteCode));
-                    cc.detach();
-                    LOGGER.log(Level.FINE, "Transformed class " + this.targetClassName + "/" + this.targetMethodName);
-                } catch (Throwable e) {
-                    if (e instanceof NotFoundException) {
-                        LOGGER.log(Level.SEVERE, "Agent did not find: " + e.getMessage(), e);
-                    } else if (e instanceof CannotCompileException) {
-                        LOGGER.log(Level.SEVERE, "Agent could not compile: " + e.getMessage(), e);
-                    } else {
-                        LOGGER.log(Level.SEVERE, "Transforming class " + this.targetClassName + " failed. Message: " + e.getMessage() + ", class: " + e.getClass().getName(), e);
-                    }
-                    throw new RuntimeException(e);
-                }
-            }
-            return byteCode;
         }
     }
 }
