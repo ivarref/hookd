@@ -8,4 +8,4 @@
                      :exec-args  {:installer      :remote
                                   :sign-releases? false
                                   :artifact       "hookd.jar"}}
-           :release {:extra-deps {ivarref/pom-patch {:mvn/version "0.1.16"}}}}}
+           :release {:extra-deps {ivarref/pom-patch {:mvn/version "0.1.18"}}}}}

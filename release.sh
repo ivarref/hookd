@@ -5,23 +5,16 @@ cd $DIR
 
 set -e
 
-rm -rf target/ || true
-lein jar
-rm -rf tmp/ || true
-rm agent.jar || true
-mkdir tmp
+./test.sh
 
-unzip -q target/hookd-0.1.0-SNAPSHOT.jar -d tmp/
-jar cmf META-INF/MANIFEST.MF agent.jar -C tmp .
-
-VERSION="$(clojure -X:release ivarref.pom-patch/set-patch-version! :patch :commit-count)"
+VERSION="$(clojure -T:release ivarref.pom-patch/set-patch-version! :patch :commit-count)"
 
 clojure -T:install
 
-#git add pom.xml README.md
-#git commit -m"Release $VERSION"
-#git tag -a v"$VERSION" -m "Release v$VERSION"
-#git push --follow-tags --force
-#
-#clojure -X:deploy
-#echo "Released $VERSION"
+git add pom.xml README.md
+git commit -m"Release $VERSION"
+git tag -a v"$VERSION" -m "Release v$VERSION"
+git push --follow-tags
+
+clojure -T:deploy
+echo "Released $VERSION"
