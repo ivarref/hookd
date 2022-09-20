@@ -21,6 +21,7 @@ clojure -T:release ivarref.pom-patch/set-version! :version '"'"$VERSION"'"'
 
 cd agentuser
 
+echo "*** *** *** Start lein test *** *** ***"
 env JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true" lein test || true
 
 cd $DIR

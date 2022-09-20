@@ -5,6 +5,24 @@
 
 (defonce lock (Object.))
 
+(deftest system-test
+  (locking lock
+    (let [getenv-args (atom nil)
+          retval (atom :empty)]
+      (hookd/install-pre-hook!
+        "java.lang.System"
+        "getenv"
+        (fn [_ args]
+          (reset! getenv-args (into [] args))))
+      (hookd/install-return-consumer!
+        "java.lang.System"
+        "getenv"
+        (fn [arg]
+          (reset! retval arg)))
+      (System/getenv "JANEI")
+      (is (= ["JANEI"] @getenv-args))
+      (is (= nil @retval)))))
+
 (deftest a-test
   (locking lock
     (hookd/clear! "com.github.ivarref.SomeClass")

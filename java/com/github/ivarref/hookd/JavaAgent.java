@@ -140,6 +140,10 @@ public class JavaAgent {
         }
     }
 
+    public static void info(String msg) {
+        LOGGER.log(Level.INFO, msg);
+    }
+
     public static class ClassTransformer implements ClassFileTransformer {
         private final String targetClassName;
         private final ClassLoader targetClassLoader;
@@ -156,14 +160,17 @@ public class JavaAgent {
                 ProtectionDomain protectionDomain,
                 byte[] byteCode) throws Exception {
             String finalTargetClassName = this.targetClassName.replaceAll("\\.", "/");
-            if (!className.equals(finalTargetClassName) || !loader.equals(targetClassLoader)) {
+            if (!className.equals(finalTargetClassName)) {
+                return byteCode;
+            }
+            if (loader != null && targetClassLoader != null && !loader.equals(targetClassLoader)) {
                 return byteCode;
             }
             ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
             ClassPool.getDefault().appendSystemPath();
-            ClassPool cp = ClassPool.getDefault();
+            ClassPool pool = ClassPool.getDefault();
 
-            CtClass cc = cp.get(targetClassName);
+            CtClass cc = pool.get(targetClassName);
 
             if (ret.containsKey(targetClassName)) {
                 for (String method : ret.get(targetClassName).consumers.keySet()) {
@@ -173,7 +180,10 @@ public class JavaAgent {
                         }
                     } else {
                         CtMethod m = cc.getDeclaredMethod(method);
-                        m.insertAfter("com.github.ivarref.hookd.JavaAgent.consumeReturn(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",$_);");
+                        String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                        m.addLocalVariable("clazz", pool.get(Class.class.getName()));
+                        String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
+                        m.insertAfter(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"ret\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, $_});");
                     }
                 }
             }
@@ -182,27 +192,24 @@ public class JavaAgent {
                 for (String method : pre.get(targetClassName).consumers.keySet()) {
                     if (method.equalsIgnoreCase("::Constructor")) {
                         for (CtConstructor m : cc.getConstructors()) {
-                            m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",this, $args);");
+                            m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ", $0, $args);");
                         }
                     } else {
                         CtMethod m = cc.getDeclaredMethod(method);
-                        m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ", this, $args);");
+                        String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                        m.addLocalVariable("clazz", pool.get(Class.class.getName()));
+                        String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
+                        m.insertBefore(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, null});");
                     }
                 }
             }
-
             byteCode = cc.toBytecode();
             cc.detach();
             return byteCode;
         }
 
         @Override
-        public byte[] transform(
-                ClassLoader loader,
-                String className,
-                Class<?> classBeingRedefined,
-                ProtectionDomain protectionDomain,
-                byte[] classfileBuffer) {
+        public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) {
             try {
                 return throwingTransform(loader, className, classBeingRedefined, protectionDomain, classfileBuffer);
             } catch (Exception e) {
