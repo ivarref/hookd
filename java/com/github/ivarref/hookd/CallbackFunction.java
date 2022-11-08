@@ -10,7 +10,7 @@ public class CallbackFunction {
             JavaAgent.consumeReturn(clazz, method, retVal);
             return null;
         } else if (op.equalsIgnoreCase("retMod")) {
-            return JavaAgent.modifyReturn(clazz, method, retVal);
+            return JavaAgent.modifyReturn(clazz, method, args, retVal);
         } else {
             return null;
         }

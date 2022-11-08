@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -42,7 +43,7 @@ public class JavaAgent {
     public static class TransformConfig {
         public final ConcurrentHashMap<String, BiConsumer> consumers = new ConcurrentHashMap<>();
 
-        public final ConcurrentHashMap<String, Function> modifiers = new ConcurrentHashMap<>();
+        public final ConcurrentHashMap<String, BiFunction> modifiers = new ConcurrentHashMap<>();
     }
 
     public static void clear(String clazz) throws Exception {
@@ -80,7 +81,7 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
-    public static synchronized void addReturnModifier(String clazzName, String methodName, Function f) throws Exception {
+    public static synchronized void addReturnModifier(String clazzName, String methodName, BiFunction f) throws Exception {
         if (!retMod.containsKey(clazzName)) {
             retMod.put(clazzName, new TransformConfig());
         }
@@ -107,10 +108,10 @@ public class JavaAgent {
         }
     }
 
-    public static Object modifyReturn(String clazzName, String methodName, Object res) {
-        Function f = retMod.get(clazzName).modifiers.get(methodName);
+    public static Object modifyReturn(String clazzName, String methodName, Object[] args, Object res) {
+        BiFunction f = retMod.get(clazzName).modifiers.get(methodName);
         if (f != null) {
-            return f.apply(res);
+            return f.apply(args, res);
         } else {
             LOGGER.log(Level.SEVERE, "Agent modifyReturn error. No consumeReturn registered for " + clazzName + "/" + methodName);
             return null;

@@ -1,6 +1,6 @@
 (ns com.github.ivarref.hookd
   (:import (com.github.ivarref.hookd JavaAgent)
-           (java.util.function BiConsumer Consumer Function)))
+           (java.util.function BiConsumer BiFunction Consumer Function)))
 
 (defn clear! [className]
   (JavaAgent/clear className))
@@ -19,9 +19,9 @@
   (JavaAgent/addReturnModifier
     className
     methodName
-    (reify Function
-      (apply [_ x]
-        (f x)))))
+    (reify BiFunction
+      (apply [_ args retval]
+        (f args retval)))))
 
 (defn install-pre-hook! [className methodName f]
   (assert (fn? f) "Expected f to be a function")

@@ -29,9 +29,10 @@
       (hookd/install-return-modifier!
         "java.lang.System"
         "getenv"
-        (fn [_]
-          "RETVAL"))
-      (is (= "RETVAL" (System/getenv "JANEI"))))))
+        (fn [args retval]
+          [(into [] args) retval "new-value"]))
+      (is (= [["JANEI"] nil "new-value"]
+             (System/getenv "JANEI"))))))
 
 (deftest a-test
   (locking lock
