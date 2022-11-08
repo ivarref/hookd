@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -35,10 +36,13 @@ public class JavaAgent {
     }
 
     public static final ConcurrentHashMap<String, TransformConfig> ret = new ConcurrentHashMap<>();
+    public static final ConcurrentHashMap<String, TransformConfig> retMod = new ConcurrentHashMap<>();
     public static final ConcurrentHashMap<String, TransformConfig> pre = new ConcurrentHashMap<>();
 
     public static class TransformConfig {
         public final ConcurrentHashMap<String, BiConsumer> consumers = new ConcurrentHashMap<>();
+
+        public final ConcurrentHashMap<String, Function> modifiers = new ConcurrentHashMap<>();
     }
 
     public static void clear(String clazz) throws Exception {
@@ -47,6 +51,9 @@ public class JavaAgent {
         }
         if (pre.containsKey(clazz)) {
             pre.remove(clazz);
+        }
+        if (retMod.containsKey(clazz)) {
+            retMod.remove(clazz);
         }
         attachAndTransform(clazz);
     }
@@ -73,6 +80,15 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
+    public static synchronized void addReturnModifier(String clazzName, String methodName, Function f) throws Exception {
+        if (!retMod.containsKey(clazzName)) {
+            retMod.put(clazzName, new TransformConfig());
+        }
+        TransformConfig classConfig = retMod.get(clazzName);
+        classConfig.modifiers.put(methodName, f);
+        attachAndTransform(clazzName);
+    }
+
     public static synchronized void addPreHook(String clazzName, String methodName, BiConsumer consumer) throws Exception {
         if (!pre.containsKey(clazzName)) {
             pre.put(clazzName, new TransformConfig());
@@ -91,6 +107,15 @@ public class JavaAgent {
         }
     }
 
+    public static Object modifyReturn(String clazzName, String methodName, Object res) {
+        Function f = retMod.get(clazzName).modifiers.get(methodName);
+        if (f != null) {
+            return f.apply(res);
+        } else {
+            LOGGER.log(Level.SEVERE, "Agent modifyReturn error. No consumeReturn registered for " + clazzName + "/" + methodName);
+            return null;
+        }
+    }
     public static void consumePre(String clazzName, String methodName, Object t, Object[] args) {
         BiConsumer consumer = pre.get(clazzName).consumers.get(methodName);
         if (consumer != null) {
@@ -185,6 +210,16 @@ public class JavaAgent {
                         String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
                         m.insertAfter(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"ret\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, $_});");
                     }
+                }
+            }
+
+            if (retMod.containsKey(targetClassName)) {
+                for (String method : retMod.get(targetClassName).modifiers.keySet()) {
+                    CtMethod m = cc.getDeclaredMethod(method);
+                    String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                    m.addLocalVariable("clazz", pool.get(Class.class.getName()));
+                    String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
+                    m.insertAfter(getClazz + " $_ = clazz.getMethods()[0].invoke(null, new Object[] {\"retMod\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, $_});");
                 }
             }
 

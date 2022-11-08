@@ -23,6 +23,16 @@
       (is (= ["JANEI"] @getenv-args))
       (is (= nil @retval)))))
 
+(deftest system-retmod-test
+  (locking lock
+    (let []
+      (hookd/install-return-modifier!
+        "java.lang.System"
+        "getenv"
+        (fn [_]
+          "RETVAL"))
+      (is (= "RETVAL" (System/getenv "JANEI"))))))
+
 (deftest a-test
   (locking lock
     (hookd/clear! "com.github.ivarref.SomeClass")
