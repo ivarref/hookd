@@ -21,7 +21,7 @@
     methodName
     (reify BiFunction
       (apply [_ args retval]
-        (f args retval)))))
+        (f (into [] args) retval)))))
 
 (defn install-pre-hook! [className methodName f]
   (assert (fn? f) "Expected f to be a function")
@@ -29,5 +29,5 @@
     className
     methodName
     (reify BiConsumer
-      (accept [_ t x]
-        (f t x)))))
+      (accept [_ t args]
+        (f t (into [] args))))))
