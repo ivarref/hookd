@@ -27,10 +27,14 @@ public class JavaAgent {
 
     public static final AtomicReference<String> classNameInput = new AtomicReference();
     public static final AtomicReference<CountDownLatch> latch = new AtomicReference<>();
+    public static final AtomicReference<Throwable> error = new AtomicReference<>();
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
         try {
+            error.set(null);
             transformClass(classNameInput.get(), inst);
+        } catch (Throwable t) {
+            error.set(t);
         } finally {
             latch.get().countDown();
         }
@@ -46,7 +50,7 @@ public class JavaAgent {
         public final ConcurrentHashMap<String, BiFunction> modifiers = new ConcurrentHashMap<>();
     }
 
-    public static void clear(String clazz) throws Exception {
+    public static void clear(String clazz) throws Throwable {
         if (ret.containsKey(clazz)) {
             ret.remove(clazz);
         }
@@ -59,7 +63,7 @@ public class JavaAgent {
         attachAndTransform(clazz);
     }
 
-    public static void attachAndTransform(String clazz) throws Exception {
+    public static void attachAndTransform(String clazz) throws Throwable {
         latch.set(new CountDownLatch(1));
         classNameInput.set(clazz);
         VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
@@ -69,10 +73,14 @@ public class JavaAgent {
             String msg = "Timeout waiting for JavaAgent to finish";
             LOGGER.log(Level.SEVERE, msg);
             throw new RuntimeException(msg);
+        } else {
+            if (error.get()!=null) {
+                throw error.get();
+            }
         }
     }
 
-    public static synchronized void addReturnConsumer(String clazzName, String methodName, Consumer consumer) throws Exception {
+    public static synchronized void addReturnConsumer(String clazzName, String methodName, Consumer consumer) throws Throwable {
         if (!ret.containsKey(clazzName)) {
             ret.put(clazzName, new TransformConfig());
         }
@@ -81,7 +89,7 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
-    public static synchronized void addReturnModifier(String clazzName, String methodName, BiFunction f) throws Exception {
+    public static synchronized void addReturnModifier(String clazzName, String methodName, BiFunction f) throws Throwable {
         if (!retMod.containsKey(clazzName)) {
             retMod.put(clazzName, new TransformConfig());
         }
@@ -90,7 +98,7 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
-    public static synchronized void addPreHook(String clazzName, String methodName, BiConsumer consumer) throws Exception {
+    public static synchronized void addPreHook(String clazzName, String methodName, BiConsumer consumer) throws Throwable {
         if (!pre.containsKey(clazzName)) {
             pre.put(clazzName, new TransformConfig());
         }
