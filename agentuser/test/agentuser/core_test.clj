@@ -1,7 +1,12 @@
 (ns agentuser.core-test
-  (:require [clojure.test :refer [deftest is]]
-            [com.github.ivarref.hookd :as hookd])
-  (:import (com.github.ivarref SomeClass)))
+  (:require
+    [clojure.string :as str]
+    [clojure.test :refer [deftest is]]
+    [com.github.ivarref.hookd :as hookd])
+  (:import (com.github.ivarref SomeClass)
+           (com.github.ivarref.hookd JavaAgent)
+           (java.lang.reflect Field)
+           (java.net HttpCookie)))
 
 (defonce lock (Object.))
 
@@ -30,9 +35,37 @@
         "java.lang.System"
         "getenv"
         (fn [args retval]
-          [(into [] args) retval "new-value"]))
+          [args retval "new-value"]))
       (is (= [["JANEI"] nil "new-value"]
              (System/getenv "JANEI"))))))
+
+(deftest system-retmod-test-2
+  (locking lock
+    (let []
+      (hookd/install-return-modifier!
+        "java.lang.System"
+        "getenv"
+        (fn [args retval]
+          [args retval "new-value"]))
+      (is (= [["JANEI"] nil "new-value"]
+             (System/getenv "JANEI"))))))
+
+(defn currTimeMillis []
+  (System/currentTimeMillis))
+
+(deftest currentTimeMillis-test
+  (locking lock
+    (hookd/install-return-modifier!
+      "java.lang.System"
+      "currentTimeMillis"
+      (fn [org-args org-retval]
+        123))
+    (is (true? (contains? (into #{} JavaAgent/okTransform) "java.net.HttpCookie")))
+    (let [cookie (HttpCookie. "janei" "janei")
+          ^Field f (.getDeclaredField HttpCookie "whenCreated")]
+      (.setAccessible f true)
+      (is (= 123 (.get f ^Object cookie))))
+    (is (= 123 (currTimeMillis)))))
 
 (deftest a-test
   (locking lock

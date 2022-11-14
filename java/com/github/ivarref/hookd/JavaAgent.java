@@ -2,18 +2,21 @@ package com.github.ivarref.hookd;
 
 import com.sun.tools.attach.VirtualMachine;
 import javassist.*;
+import javassist.expr.ExprEditor;
+import javassist.expr.MethodCall;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
+import java.lang.instrument.UnmodifiableClassException;
 import java.security.ProtectionDomain;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -74,7 +77,7 @@ public class JavaAgent {
             LOGGER.log(Level.SEVERE, msg);
             throw new RuntimeException(msg);
         } else {
-            if (error.get()!=null) {
+            if (error.get() != null) {
                 throw error.get();
             }
         }
@@ -90,6 +93,9 @@ public class JavaAgent {
     }
 
     public static synchronized void addReturnModifier(String clazzName, String methodName, BiFunction f) throws Throwable {
+        if (clazzName.equalsIgnoreCase("java.lang.System") && methodName.equalsIgnoreCase("currentTimeMillis")) {
+            clazzName = "NATIVE_" + clazzName;
+        }
         if (!retMod.containsKey(clazzName)) {
             retMod.put(clazzName, new TransformConfig());
         }
@@ -125,6 +131,7 @@ public class JavaAgent {
             return null;
         }
     }
+
     public static void consumePre(String clazzName, String methodName, Object t, Object[] args) {
         BiConsumer consumer = pre.get(clazzName).consumers.get(methodName);
         if (consumer != null) {
@@ -141,18 +148,29 @@ public class JavaAgent {
         try {
             targetCls = Class.forName(className);
         } catch (Throwable ex) {
-            LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName");
+            if (!className.startsWith("NATIVE_")) {
+                LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
+            }
         }
+        if (className.startsWith("NATIVE_")) {
+            for (Class<?> clazz : inst.getAllLoadedClasses()) {
+                if (!clazz.getName().startsWith("com.github.ivarref.hookd")) {
+                    transform(className, clazz, clazz.getClassLoader(), inst);
+                }
+            }
+            return;
+        }
+
         if (targetCls != null) {
             targetClassLoader = targetCls.getClassLoader();
-            transform(targetCls, targetClassLoader, inst);
+            transform(className, targetCls, targetClassLoader, inst);
             return;
         }
         for (Class<?> clazz : inst.getAllLoadedClasses()) {
             if (clazz.getName().equals(className)) {
                 targetCls = clazz;
                 targetClassLoader = targetCls.getClassLoader();
-                transform(targetCls, targetClassLoader, inst);
+                transform(className, targetCls, targetClassLoader, inst);
                 return;
             }
         }
@@ -161,7 +179,10 @@ public class JavaAgent {
 
     public static final ConcurrentHashMap<String, ClassTransformer> transformers = new ConcurrentHashMap<>();
 
-    public static void transform(Class<?> clazz, ClassLoader classLoader, Instrumentation instrumentation) {
+    public static final ConcurrentSkipListSet<String> okTransform = new ConcurrentSkipListSet<>();
+    public static final ConcurrentSkipListSet<String> errorTransform = new ConcurrentSkipListSet<>();
+
+    public static void transform(String originClass, Class<?> clazz, ClassLoader classLoader, Instrumentation instrumentation) {
         if (false == transformers.containsKey(clazz.getName())) {
             ClassTransformer dt = new ClassTransformer(clazz.getName(), classLoader);
             transformers.put(clazz.getName(), dt);
@@ -169,7 +190,16 @@ public class JavaAgent {
         }
         try {
             instrumentation.retransformClasses(clazz);
+            okTransform.add(clazz.getName());
+        } catch (UnmodifiableClassException uce) {
+            errorTransform.add(clazz.getName());
+            if (originClass.startsWith("NATIVE_")) {
+                LOGGER.log(Level.FINE, "UnmodifiableClassException for class " + clazz.getName());
+            } else {
+                throw new RuntimeException(uce);
+            }
         } catch (Throwable ex) {
+            errorTransform.add(clazz.getName());
             throw new RuntimeException("Agent transform failed for: [" + clazz.getName() + "]", ex);
         }
     }
@@ -200,7 +230,12 @@ public class JavaAgent {
             if (loader != null && targetClassLoader != null && !loader.equals(targetClassLoader)) {
                 return byteCode;
             }
+            if (targetClassName.startsWith("com.github.ivarref.hookd")) {
+                return byteCode;
+            }
+
             ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
+            ClassPool.getDefault().insertClassPath(new ByteArrayClassPath(targetClassName, byteCode));
             ClassPool.getDefault().appendSystemPath();
             ClassPool pool = ClassPool.getDefault();
 
@@ -214,10 +249,10 @@ public class JavaAgent {
                         }
                     } else {
                         CtMethod m = cc.getDeclaredMethod(method);
-                        String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                        String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
                         m.addLocalVariable("clazz", pool.get(Class.class.getName()));
                         String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                        m.insertAfter(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"ret\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, $_});");
+                        m.insertAfter(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"ret\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, $_});");
                     }
                 }
             }
@@ -225,11 +260,33 @@ public class JavaAgent {
             if (retMod.containsKey(targetClassName)) {
                 for (String method : retMod.get(targetClassName).modifiers.keySet()) {
                     CtMethod m = cc.getDeclaredMethod(method);
-                    String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                    String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
                     m.addLocalVariable("clazz", pool.get(Class.class.getName()));
                     String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                    m.insertAfter(getClazz + " $_ = clazz.getMethods()[0].invoke(null, new Object[] {\"retMod\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, $_});");
+                    m.insertAfter(getClazz + " $_ = clazz.getMethods()[0].invoke(null, new Object[] {\"retMod\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, $_});");
                 }
+            }
+
+            TransformConfig jlSystem = retMod.getOrDefault("NATIVE_java.lang.System", new TransformConfig());
+            boolean overrideCurrentTimeMillis = jlSystem.modifiers.containsKey("currentTimeMillis");
+            if (overrideCurrentTimeMillis) {
+                cc.instrument(new ExprEditor() {
+                    @Override
+                    public void edit(MethodCall m) throws CannotCompileException {
+                        String className = m.getClassName();
+                        String method = m.getMethodName();
+                        // from: https://stackoverflow.com/questions/12663905/editing-a-native-method-class-with-javassist
+                        if (className == null || method == null) {
+                            return;
+                        }
+                        // more examples: https://www.tabnine.com/code/java/classes/javassist.expr.MethodCall
+                        if (overrideCurrentTimeMillis && className.equals("java.lang.System") && method.equals("currentTimeMillis")) {
+                            m.replace("{ Class clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.NativeOverride\", true, java.lang.Thread.currentThread().getContextClassLoader());" +
+                                    " Object res = clazz.getDeclaredMethod(\"currentTimeMillis\", new java.lang.Class[0]).invoke(null, new java.lang.Object[0]);" +
+                                    " $_ = ((Long)res).longValue(); }");
+                        }
+                    }
+                });
             }
 
             if (pre.containsKey(targetClassName)) {
@@ -240,10 +297,10 @@ public class JavaAgent {
                         }
                     } else {
                         CtMethod m = cc.getDeclaredMethod(method);
-                        String self = ((m.getModifiers() & Modifier.STATIC)!=0) ? "null" : "this";
+                        String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
                         m.addLocalVariable("clazz", pool.get(Class.class.getName()));
                         String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                        m.insertBefore(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \""+this.targetClassName+"\", \"" + method + "\", $args, null});");
+                        m.insertBefore(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, null});");
                     }
                 }
             }

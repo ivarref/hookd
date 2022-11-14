@@ -20,8 +20,9 @@ clojure -T:install
 clojure -T:release ivarref.pom-patch/set-version! :version '"'"$VERSION"'"'
 
 cd agentuser
+rm -rf target/ || true
 
 echo "*** *** *** Start lein test *** *** ***"
-env JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true" lein test || true
+env JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true --add-opens=java.base/java.net=ALL-UNNAMED" lein test || true
 
 cd $DIR
