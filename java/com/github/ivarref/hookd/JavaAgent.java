@@ -5,12 +5,14 @@ import javassist.*;
 import javassist.expr.ExprEditor;
 import javassist.expr.MethodCall;
 
+import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
-import java.util.UUID;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
@@ -21,6 +23,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 public class JavaAgent {
 
@@ -37,7 +40,7 @@ public class JavaAgent {
     public static void agentmain(String agentArgs, Instrumentation inst) {
         try {
             error.set(null);
-            transformClass(classNameInput.get(), inst);
+            transformClass(classNameInput.get(), inst, getIgnoresClasses());
         } catch (Throwable t) {
             error.set(t);
         } finally {
@@ -159,8 +162,43 @@ public class JavaAgent {
 
     }
 
+    public static Set<String> getIgnoresClasses() {
+        TreeSet<String> s = new TreeSet<>();
+        try (BufferedReader fr = new BufferedReader(new FileReader("ignoreclasses.txt"))) {
+            while (true) {
+                String line = fr.readLine();
+                if (null == line) {
+                    break;
+                }
+                s.add(line);
+            }
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return s;
+    }
 
-    public static void transformClass(String className, Instrumentation inst) {
+    public static String simpleClassName(Class clazz) {
+        return clazz.getSimpleName().split(Pattern.quote("/"))[0];
+    }
+
+    public static void addIgnoreClass(Class clazz) {
+        if (getIgnoresClasses().contains(simpleClassName(clazz))) {
+            return;
+        }
+        try (FileWriter fw = new FileWriter("ignoreclasses.txt", true);
+             BufferedWriter bw = new BufferedWriter(fw)) {
+            bw.write(simpleClassName(clazz));
+            bw.newLine();
+            LOGGER.log(Level.FINE, "Added " + clazz.getSimpleName() + " to ignored classes");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void transformClass(String className, Instrumentation inst, Set<String> ignoreClasses) {
         LOGGER.log(Level.FINE, "transformClass starting for " + className);
         Class<?> targetCls = null;
         ClassLoader targetClassLoader = null;
@@ -171,29 +209,20 @@ public class JavaAgent {
                 LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
             }
         }
-        if (className.startsWith("NATIVE_")) {
-            for (Class<?> clazz : inst.getAllLoadedClasses()) {
-                if (!clazz.getName().startsWith("com.github.ivarref.hookd")) {
+        for (Class<?> clazz : inst.getAllLoadedClasses()) {
+            if (!clazz.getName().startsWith("com.github.ivarref.hookd") && !ignoreClasses.contains(simpleClassName(clazz))) {
+                try {
                     transform(className, clazz, clazz.getClassLoader(), inst);
+                } catch (Throwable t) {
+                    if ("java.lang.instrument.UnmodifiableClassException".equalsIgnoreCase(t.getMessage())) {
+                        LOGGER.log(Level.FINE, "Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+                        addIgnoreClass(clazz);
+                    } else {
+                        System.err.println("Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+                    }
                 }
             }
-            return;
         }
-
-        if (targetCls != null) {
-            targetClassLoader = targetCls.getClassLoader();
-            transform(className, targetCls, targetClassLoader, inst);
-            return;
-        }
-        for (Class<?> clazz : inst.getAllLoadedClasses()) {
-            if (clazz.getName().equals(className)) {
-                targetCls = clazz;
-                targetClassLoader = targetCls.getClassLoader();
-                transform(className, targetCls, targetClassLoader, inst);
-                return;
-            }
-        }
-        throw new RuntimeException("Agent failed to find class [" + className + "]");
     }
 
     public static final ConcurrentHashMap<String, ClassTransformer> transformers = new ConcurrentHashMap<>();
@@ -330,9 +359,13 @@ public class JavaAgent {
 
                                 endBlock.append("stopTime = Long.valueOf(System.nanoTime());");
                                 endBlock.append("method.invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
-
                                 m.insertBefore(beforeBlock.toString());
                                 m.insertAfter(endBlock.toString());
+
+                                m.addCatch("{" +
+                                        "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
+                                        ".invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, Long.valueOf(System.nanoTime()), $args, t});" +
+                                        "System.err.println(\"oh noes!\"); throw t; }", pool.get("java.lang.Throwable"), "t");
                             }
                         }
                     }

@@ -30,7 +30,6 @@ public class PreFunctionInvoke {
             map.put("stop", stopTime.longValue());
             map.put("result", retVal);
         }
-
         consumer.accept(map);
 
         return null;
