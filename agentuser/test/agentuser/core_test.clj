@@ -123,20 +123,17 @@
 
 (deftest wiretap-throw-exception
   (locking lock
-    (time
-      (hookd/clear! "com.github.ivarref.ExceptionIsThrown"))
+    #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
     (let [maps (atom #{})]
-      (time
-        (hookd/install!
-          (fn [java-map]
-            (swap! maps conj java-map)
-            (prn "java-map:" java-map))
-          [["com.github.ivarref.ExceptionIsThrown" "returnInt"]]))
+      (hookd/install!
+        (fn [java-map]
+          (swap! maps conj java-map)
+          (prn "java-map:" java-map))
+        [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
       (let [someInst (ExceptionIsThrown.)]
         (try
           (.returnInt someInst)
           (catch Throwable t
             (is (some? t))))
         (is (= 0 1))
-        (time
-          (hookd/clear! "com.github.ivarref.ExceptionIsThrown"))))))
+        #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))

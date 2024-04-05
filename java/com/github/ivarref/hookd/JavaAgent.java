@@ -12,7 +12,6 @@ import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
-import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Set;
@@ -21,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -219,34 +217,36 @@ public class JavaAgent {
             }
         }
 
-        if (targetCls != null) {
-            targetClassLoader = targetCls.getClassLoader();
-            transform(className, targetCls, targetClassLoader, inst);
-            return;
+        Class[] allLoadedClasses = inst.getAllLoadedClasses();
+        ArrayList<Class> modClasses = new ArrayList();
+        TreeSet<String> classes = new TreeSet<>();
+        int skipped = 0;
+        for (Class<?> clazz : allLoadedClasses) {
+            classes.add(clazz.getSimpleName());
         }
-//        Class[] allLoadedClasses = inst.getAllLoadedClasses();
-//        ArrayList<Class> modClasses = new ArrayList();
-//        int skipped = 0;
-//        for (Class<?> clazz : allLoadedClasses) {
-//            if (!clazz.getName().startsWith("com.github.ivarref.hookd") && !ignoreClasses.contains(simpleClassName(clazz))) {
-//                modClasses.add(clazz);
-//            } else {
-//                skipped += 1;
-//            }
-//        }
-//        System.err.println("Modifying " + modClasses.size() + " classes. Skipped = " + skipped);
-//        for (Class clazz: modClasses) {
-//            try {
-//                transform(className, clazz, clazz.getClassLoader(), inst);
-//            } catch (Throwable t) {
-//                if ("java.lang.instrument.UnmodifiableClassException".equalsIgnoreCase(t.getMessage())) {
-//                    LOGGER.log(Level.FINE, "Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
-//                    addIgnoreClass(clazz);
-//                } else {
-//                    System.err.println("Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
-//                }
-//            }
-//        }
+        for (Class<?> clazz : allLoadedClasses) {
+            if (!clazz.getName().startsWith("com.github.ivarref.hookd") &&
+                    !ignoreClasses.contains(simpleClassName(clazz))) {
+                modClasses.add(clazz);
+            } else {
+                skipped += 1;
+            }
+        }
+        System.err.println("Modifying " + modClasses.size() + " classes. Skipped = " + skipped);
+        int cnt = 0;
+        for (Class clazz : modClasses) {
+            try {
+                cnt += 1;
+                transform(className, clazz, clazz.getClassLoader(), inst);
+            } catch (Throwable t) {
+                if ("java.lang.instrument.UnmodifiableClassException".equalsIgnoreCase(t.getMessage())) {
+                    LOGGER.log(Level.FINE, "Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+                    addIgnoreClass(clazz);
+                } else {
+                    System.err.println("Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+                }
+            }
+        }
     }
 
     public static final ConcurrentHashMap<String, ClassTransformer> transformers = new ConcurrentHashMap<>();
@@ -313,40 +313,70 @@ public class JavaAgent {
 
             CtClass cc = pool.get(targetClassName);
 
-            if (prePost.containsKey(targetClassName)) {
-                for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
-                    if (method.equalsIgnoreCase("::Constructor")) {
-                    } else {
-                        for (CtMethod m : cc.getMethods()) {
-                            if (m.getName().equals(method)) {
-                                StringBuilder beforeBlock = new StringBuilder();
-                                StringBuilder endBlock = new StringBuilder();
-                                String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
+            cc.instrument(new ExprEditor() {
+                @Override
+                public void edit(MethodCall m) throws CannotCompileException {
+                    if (prePost.containsKey(m.getClassName())
+                            && prePost.get(m.getClassName()).prePostConsumers.containsKey(m.getMethodName())) {
+                        try {
+                            CtMethod method = m.getMethod();
+                            System.err.println("match for: " + m.getClassName() + "/" + m.getMethodName());
+                            System.err.println("target classname is: " + targetClassName);
+                            StringBuilder locals = new StringBuilder();
+                            locals.append("long startTime = System.nanoTime();");
+                            locals.append("java.lang.reflect.Method method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
+                            locals.append("java.lang.String id = java.util.UUID.randomUUID().toString();");
+                            String self = ((method.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
 
-                                m.addLocalVariable("startTime", pool.get("java.lang.Long"));
-                                m.addLocalVariable("stopTime", pool.get("java.lang.Long"));
-                                m.addLocalVariable("id", pool.get("java.lang.String"));
-                                m.addLocalVariable("method", pool.get(Method.class.getName()));
+                            String start = "{ method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + m.getClassName() + "\", \"" + m.getMethodName() + "\", id, startTime, null, $args, null}); }";
+                            start = "{ System.out.println(id); }";
+                            String onThrowable = "{ System.out.println(\"Throwed\" + method); }";
+                            m.replace("{" + locals.toString() +
+                                    "try {"+start+" $_ = $proceed($$); } catch (Throwable t) { "+ onThrowable +" } }");
 
-                                beforeBlock.append("method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
-                                beforeBlock.append("startTime = Long.valueOf(System.nanoTime());");
-                                beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
-                                beforeBlock.append("method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, null, $args, null});");
-
-                                endBlock.append("stopTime = Long.valueOf(System.nanoTime());");
-                                endBlock.append("method.invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
-                                m.insertBefore(beforeBlock.toString());
-                                m.insertAfter(endBlock.toString());
-
-                                addCatch(m,"{" +
-                                        "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
-                                        ".invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, Long.valueOf(System.nanoTime()), $args, t});" +
-                                        "System.err.println(\"oh noes!\"); throw t; }", pool.get("java.lang.Throwable"), "t");
-                            }
+                        } catch (Throwable t) {
+                            throw new RuntimeException(t);
                         }
+                    } else {
+                        super.edit(m);
                     }
                 }
-            }
+            });
+
+//            if (prePost.containsKey(targetClassName)) {
+//                for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
+//                    if (method.equalsIgnoreCase("::Constructor")) {
+//                    } else {
+//                        for (CtMethod m : cc.getMethods()) {
+//                            if (m.getName().equals(method)) {
+//                                StringBuilder beforeBlock = new StringBuilder();
+//                                StringBuilder endBlock = new StringBuilder();
+//                                String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
+//
+//                                m.addLocalVariable("startTime", pool.get("java.lang.Long"));
+//                                m.addLocalVariable("stopTime", pool.get("java.lang.Long"));
+//                                m.addLocalVariable("id", pool.get("java.lang.String"));
+//                                m.addLocalVariable("method", pool.get(Method.class.getName()));
+//
+//                                beforeBlock.append("method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
+//                                beforeBlock.append("startTime = Long.valueOf(System.nanoTime());");
+//                                beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
+//                                beforeBlock.append("method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, null, $args, null});");
+//
+//                                endBlock.append("stopTime = Long.valueOf(System.nanoTime());");
+//                                endBlock.append("method.invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
+//                                m.insertBefore(beforeBlock.toString());
+//                                m.insertAfter(endBlock.toString());
+//
+//                                addCatch(m,"{" +
+////                                        "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
+//                                        "method.invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, Long.valueOf(System.nanoTime()), $args, t});" +
+//                                        "System.err.println(\"oh noes!\"); throw t; }", pool.get("java.lang.Throwable"), "t");
+//                            }
+//                        }
+//                    }
+//                }
+//            }
 
             byteCode = cc.toBytecode();
             cc.detach();
@@ -362,90 +392,5 @@ public class JavaAgent {
                 throw new RuntimeException(e);
             }
         }
-
-        public void addCatch(CtMethod method, String src, CtClass exceptionType, String exceptionName) throws CannotCompileException {
-            CtClass cc = method.getDeclaringClass();
-            MethodInfo methodInfo = method.getMethodInfo();
-            ConstPool cp = methodInfo.getConstPool();
-            CodeAttribute ca = methodInfo.getCodeAttribute();
-            CodeIterator iterator = ca.iterator();
-            Bytecode b = new Bytecode(cp, ca.getMaxStack(), ca.getMaxLocals());
-            b.setStackDepth(1);
-            Javac jv = new Javac(b, cc);
-
-            try {
-                jv.recordParams(method.getParameterTypes(), Modifier.isStatic(method.getModifiers()));
-                int var = jv.recordVariable(exceptionType, exceptionName);
-                b.addAstore(var);
-                jv.recordLocalVariables(ca, 0);
-                jv.compileStmnt(src);
-                int stack = b.getMaxStack();
-                int locals = b.getMaxLocals();
-                if (stack > ca.getMaxStack()) {
-                    ca.setMaxStack(stack);
-                }
-
-                if (locals > ca.getMaxLocals()) {
-                    ca.setMaxLocals(locals);
-                }
-
-                int len = iterator.getCodeLength();
-                int pos = iterator.append(b.get());
-                ca.getExceptionTable().add(getStartPosOfBody(ca), len, len, cp.addClassInfo(exceptionType));
-                iterator.append(b.getExceptionTable(), pos);
-                methodInfo.rebuildStackMapIf6(cc.getClassPool(), cc.getClassFile2());
-            } catch (NotFoundException var15) {
-                throw new CannotCompileException(var15);
-            } catch (CompileError var16) {
-                throw new CannotCompileException(var16);
-            } catch (BadBytecode var17) {
-                throw new CannotCompileException(var17);
-            }
-        }
-
-        public static int getStartPosOfBody(CodeAttribute ca) throws CannotCompileException {
-            return 0;
-        }
-
-//        private void insertBefore(CtMethod method, String src) throws Exception {
-//            MethodInfo methodInfo = method.getMethodInfo();
-//            CtClass cc = method.getDeclaringClass();
-////            cc.checkModify();
-//            CodeAttribute ca = methodInfo.getCodeAttribute();
-//            if (ca == null) {
-//                throw new CannotCompileException("no method body");
-//            } else {
-//                CodeIterator iterator = ca.iterator();
-//                Javac jv = new Javac(cc);
-//
-//                try {
-//                    int nvars = jv.recordParams(method.getParameterTypes(), Modifier.isStatic(method.getModifiers()));
-//                    jv.recordParamNames(ca, nvars);
-//                    jv.recordLocalVariables(ca, 0);
-//                    jv.recordReturnType(Descriptor.getReturnType(methodInfo.getDescriptor(), cc.getClassPool()), false);
-//                    jv.compileStmnt(src);
-//                    Bytecode b = jv.getBytecode();
-//                    int stack = b.getMaxStack();
-//                    int locals = b.getMaxLocals();
-//                    if (stack > ca.getMaxStack()) {
-//                        ca.setMaxStack(stack);
-//                    }
-//
-//                    if (locals > ca.getMaxLocals()) {
-//                        ca.setMaxLocals(locals);
-//                    }
-//
-//                    int pos = iterator.insertEx(b.get());
-//                    iterator.insert(b.getExceptionTable(), pos);
-//                    methodInfo.rebuildStackMapIf6(cc.getClassPool(), cc.getClassFile2());
-//                } catch (NotFoundException var12) {
-//                    throw new CannotCompileException(var12);
-//                } catch (CompileError var13) {
-//                    throw new CannotCompileException(var13);
-//                } catch (BadBytecode var14) {
-//                    throw new CannotCompileException(var14);
-//                }
-//            }
-//        }
     }
 }
