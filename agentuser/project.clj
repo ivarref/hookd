@@ -6,4 +6,7 @@
   :dependencies [[org.clojure/clojure "1.10.3"]
                  [com.github.ivarref/hookd "DEV"]]
   :java-source-paths ["java"]
+  :jvm-opts ["-XX:+EnableDynamicAgentLoading"
+             "-Djdk.attach.allowAttachSelf=true"
+             "--add-opens=java.base/java.net=ALL-UNNAMED"]
   :repl-options {:init-ns agentuser.core})

@@ -326,10 +326,10 @@ public class JavaAgent {
                                 m.addLocalVariable("clazz", pool.get(Class.class.getName()));
 
                                 beforeBlock.append("clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader());");
-                                beforeBlock.append("startTime = System.nanoTime()");
+                                beforeBlock.append("startTime = System.nanoTime();");
                                 beforeBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, null, null});");
 
-                                endBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, System.nanoTime(), $_});");
+//                                endBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, System.nanoTime(), $_});");
 
                                 m.insertBefore(beforeBlock.toString());
                                 m.insertAfter(endBlock.toString());
