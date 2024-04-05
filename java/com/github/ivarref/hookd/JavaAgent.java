@@ -2,6 +2,9 @@ package com.github.ivarref.hookd;
 
 import com.sun.tools.attach.VirtualMachine;
 import javassist.*;
+import javassist.bytecode.*;
+import javassist.compiler.CompileError;
+import javassist.compiler.Javac;
 import javassist.expr.ExprEditor;
 import javassist.expr.MethodCall;
 
@@ -11,12 +14,14 @@ import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -40,6 +45,10 @@ public class JavaAgent {
     public static void agentmain(String agentArgs, Instrumentation inst) {
         try {
             error.set(null);
+//            ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
+//            ClassPool.getDefault().insertClassPath(new ByteArrayClassPath(targetClassName, byteCode));
+            ClassPool.getDefault().appendSystemPath();
+
             transformClass(classNameInput.get(), inst, getIgnoresClasses());
         } catch (Throwable t) {
             error.set(t);
@@ -209,20 +218,35 @@ public class JavaAgent {
                 LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
             }
         }
-        for (Class<?> clazz : inst.getAllLoadedClasses()) {
-            if (!clazz.getName().startsWith("com.github.ivarref.hookd") && !ignoreClasses.contains(simpleClassName(clazz))) {
-                try {
-                    transform(className, clazz, clazz.getClassLoader(), inst);
-                } catch (Throwable t) {
-                    if ("java.lang.instrument.UnmodifiableClassException".equalsIgnoreCase(t.getMessage())) {
-                        LOGGER.log(Level.FINE, "Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
-                        addIgnoreClass(clazz);
-                    } else {
-                        System.err.println("Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
-                    }
-                }
-            }
+
+        if (targetCls != null) {
+            targetClassLoader = targetCls.getClassLoader();
+            transform(className, targetCls, targetClassLoader, inst);
+            return;
         }
+//        Class[] allLoadedClasses = inst.getAllLoadedClasses();
+//        ArrayList<Class> modClasses = new ArrayList();
+//        int skipped = 0;
+//        for (Class<?> clazz : allLoadedClasses) {
+//            if (!clazz.getName().startsWith("com.github.ivarref.hookd") && !ignoreClasses.contains(simpleClassName(clazz))) {
+//                modClasses.add(clazz);
+//            } else {
+//                skipped += 1;
+//            }
+//        }
+//        System.err.println("Modifying " + modClasses.size() + " classes. Skipped = " + skipped);
+//        for (Class clazz: modClasses) {
+//            try {
+//                transform(className, clazz, clazz.getClassLoader(), inst);
+//            } catch (Throwable t) {
+//                if ("java.lang.instrument.UnmodifiableClassException".equalsIgnoreCase(t.getMessage())) {
+//                    LOGGER.log(Level.FINE, "Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+//                    addIgnoreClass(clazz);
+//                } else {
+//                    System.err.println("Transform failed for class: " + clazz.getSimpleName() + " : " + t.getMessage());
+//                }
+//            }
+//        }
     }
 
     public static final ConcurrentHashMap<String, ClassTransformer> transformers = new ConcurrentHashMap<>();
@@ -281,61 +305,13 @@ public class JavaAgent {
             if (targetClassName.startsWith("com.github.ivarref.hookd")) {
                 return byteCode;
             }
-
             ClassPool.getDefault().insertClassPath(new LoaderClassPath(loader));
             ClassPool.getDefault().insertClassPath(new ByteArrayClassPath(targetClassName, byteCode));
             ClassPool.getDefault().appendSystemPath();
+
             ClassPool pool = ClassPool.getDefault();
 
             CtClass cc = pool.get(targetClassName);
-
-            if (ret.containsKey(targetClassName)) {
-                for (String method : ret.get(targetClassName).consumers.keySet()) {
-                    if (method.equalsIgnoreCase("::Constructor")) {
-                        for (CtConstructor m : cc.getConstructors()) {
-                            m.insertAfter("com.github.ivarref.hookd.JavaAgent.consumeReturn(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ",this);");
-                        }
-                    } else {
-                        CtMethod m = cc.getDeclaredMethod(method);
-                        String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
-                        m.addLocalVariable("clazz", pool.get(Class.class.getName()));
-                        String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                        m.insertAfter(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"ret\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, $_});");
-                    }
-                }
-            }
-
-            if (retMod.containsKey(targetClassName)) {
-                for (String method : retMod.get(targetClassName).modifiers.keySet()) {
-                    CtMethod m = cc.getDeclaredMethod(method);
-                    String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
-                    m.addLocalVariable("clazz", pool.get(Class.class.getName()));
-                    String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                    m.insertAfter(getClazz + " $_ = clazz.getMethods()[0].invoke(null, new Object[] {\"retMod\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, $_});");
-                }
-            }
-
-            TransformConfig jlSystem = retMod.getOrDefault("NATIVE_java.lang.System", new TransformConfig());
-            boolean overrideCurrentTimeMillis = jlSystem.modifiers.containsKey("currentTimeMillis");
-            if (overrideCurrentTimeMillis) {
-                cc.instrument(new ExprEditor() {
-                    @Override
-                    public void edit(MethodCall m) throws CannotCompileException {
-                        String className = m.getClassName();
-                        String method = m.getMethodName();
-                        // from: https://stackoverflow.com/questions/12663905/editing-a-native-method-class-with-javassist
-                        if (className == null || method == null) {
-                            return;
-                        }
-                        // more examples: https://www.tabnine.com/code/java/classes/javassist.expr.MethodCall
-                        if (overrideCurrentTimeMillis && className.equals("java.lang.System") && method.equals("currentTimeMillis")) {
-                            m.replace("{ Class clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.NativeOverride\", true, java.lang.Thread.currentThread().getContextClassLoader());" +
-                                    " Object res = clazz.getDeclaredMethod(\"currentTimeMillis\", new java.lang.Class[0]).invoke(null, new java.lang.Object[0]);" +
-                                    " $_ = ((Long)res).longValue(); }");
-                        }
-                    }
-                });
-            }
 
             if (prePost.containsKey(targetClassName)) {
                 for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
@@ -362,7 +338,7 @@ public class JavaAgent {
                                 m.insertBefore(beforeBlock.toString());
                                 m.insertAfter(endBlock.toString());
 
-                                m.addCatch("{" +
+                                addCatch(m,"{" +
                                         "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
                                         ".invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, Long.valueOf(System.nanoTime()), $args, t});" +
                                         "System.err.println(\"oh noes!\"); throw t; }", pool.get("java.lang.Throwable"), "t");
@@ -372,21 +348,6 @@ public class JavaAgent {
                 }
             }
 
-            if (pre.containsKey(targetClassName)) {
-                for (String method : pre.get(targetClassName).consumers.keySet()) {
-                    if (method.equalsIgnoreCase("::Constructor")) {
-                        for (CtConstructor m : cc.getConstructors()) {
-                            m.insertBefore("com.github.ivarref.hookd.JavaAgent.consumePre(\"" + this.targetClassName + "\"," + "\"" + method + "\"" + ", $0, $args);");
-                        }
-                    } else {
-                        CtMethod m = cc.getDeclaredMethod(method);
-                        String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
-                        m.addLocalVariable("clazz", pool.get(Class.class.getName()));
-                        String getClazz = "clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.CallbackFunction\", true, java.lang.Thread.currentThread().getContextClassLoader());";
-                        m.insertBefore(getClazz + " clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, null});");
-                    }
-                }
-            }
             byteCode = cc.toBytecode();
             cc.detach();
             return byteCode;
@@ -401,5 +362,90 @@ public class JavaAgent {
                 throw new RuntimeException(e);
             }
         }
+
+        public void addCatch(CtMethod method, String src, CtClass exceptionType, String exceptionName) throws CannotCompileException {
+            CtClass cc = method.getDeclaringClass();
+            MethodInfo methodInfo = method.getMethodInfo();
+            ConstPool cp = methodInfo.getConstPool();
+            CodeAttribute ca = methodInfo.getCodeAttribute();
+            CodeIterator iterator = ca.iterator();
+            Bytecode b = new Bytecode(cp, ca.getMaxStack(), ca.getMaxLocals());
+            b.setStackDepth(1);
+            Javac jv = new Javac(b, cc);
+
+            try {
+                jv.recordParams(method.getParameterTypes(), Modifier.isStatic(method.getModifiers()));
+                int var = jv.recordVariable(exceptionType, exceptionName);
+                b.addAstore(var);
+                jv.recordLocalVariables(ca, 0);
+                jv.compileStmnt(src);
+                int stack = b.getMaxStack();
+                int locals = b.getMaxLocals();
+                if (stack > ca.getMaxStack()) {
+                    ca.setMaxStack(stack);
+                }
+
+                if (locals > ca.getMaxLocals()) {
+                    ca.setMaxLocals(locals);
+                }
+
+                int len = iterator.getCodeLength();
+                int pos = iterator.append(b.get());
+                ca.getExceptionTable().add(getStartPosOfBody(ca), len, len, cp.addClassInfo(exceptionType));
+                iterator.append(b.getExceptionTable(), pos);
+                methodInfo.rebuildStackMapIf6(cc.getClassPool(), cc.getClassFile2());
+            } catch (NotFoundException var15) {
+                throw new CannotCompileException(var15);
+            } catch (CompileError var16) {
+                throw new CannotCompileException(var16);
+            } catch (BadBytecode var17) {
+                throw new CannotCompileException(var17);
+            }
+        }
+
+        public static int getStartPosOfBody(CodeAttribute ca) throws CannotCompileException {
+            return 0;
+        }
+
+//        private void insertBefore(CtMethod method, String src) throws Exception {
+//            MethodInfo methodInfo = method.getMethodInfo();
+//            CtClass cc = method.getDeclaringClass();
+////            cc.checkModify();
+//            CodeAttribute ca = methodInfo.getCodeAttribute();
+//            if (ca == null) {
+//                throw new CannotCompileException("no method body");
+//            } else {
+//                CodeIterator iterator = ca.iterator();
+//                Javac jv = new Javac(cc);
+//
+//                try {
+//                    int nvars = jv.recordParams(method.getParameterTypes(), Modifier.isStatic(method.getModifiers()));
+//                    jv.recordParamNames(ca, nvars);
+//                    jv.recordLocalVariables(ca, 0);
+//                    jv.recordReturnType(Descriptor.getReturnType(methodInfo.getDescriptor(), cc.getClassPool()), false);
+//                    jv.compileStmnt(src);
+//                    Bytecode b = jv.getBytecode();
+//                    int stack = b.getMaxStack();
+//                    int locals = b.getMaxLocals();
+//                    if (stack > ca.getMaxStack()) {
+//                        ca.setMaxStack(stack);
+//                    }
+//
+//                    if (locals > ca.getMaxLocals()) {
+//                        ca.setMaxLocals(locals);
+//                    }
+//
+//                    int pos = iterator.insertEx(b.get());
+//                    iterator.insert(b.getExceptionTable(), pos);
+//                    methodInfo.rebuildStackMapIf6(cc.getClassPool(), cc.getClassFile2());
+//                } catch (NotFoundException var12) {
+//                    throw new CannotCompileException(var12);
+//                } catch (CompileError var13) {
+//                    throw new CannotCompileException(var13);
+//                } catch (BadBytecode var14) {
+//                    throw new CannotCompileException(var14);
+//                }
+//            }
+//        }
     }
 }
