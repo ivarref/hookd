@@ -8,6 +8,7 @@ import javassist.expr.MethodCall;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
+import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -154,13 +155,8 @@ public class JavaAgent {
         }
     }
 
-    public static void consumePrePP(String clazzName, String methodName, Object t, Object[] args) {
-        BiConsumer consumer = pre.get(clazzName).consumers.get(methodName);
-        if (consumer != null) {
-            consumer.accept(t, args);
-        } else {
-            LOGGER.log(Level.SEVERE, "Agent preConsume error. No preConsume registered for " + clazzName + "/" + methodName);
-        }
+    public static void consumePrePost(String op, Object fromObj, String clazz, String method, Object[] args, Object retVal) {
+
     }
 
 
@@ -322,14 +318,18 @@ public class JavaAgent {
                                 StringBuilder endBlock = new StringBuilder();
                                 String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
 
-                                m.addLocalVariable("startTime", CtClass.longType);
-                                m.addLocalVariable("clazz", pool.get(Class.class.getName()));
+                                m.addLocalVariable("startTime", pool.get("java.lang.Long"));
+                                m.addLocalVariable("stopTime", pool.get("java.lang.Long"));
+                                m.addLocalVariable("id", pool.get("java.lang.String"));
+                                m.addLocalVariable("method", pool.get(Method.class.getName()));
 
-                                beforeBlock.append("clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader());");
-                                beforeBlock.append("startTime = System.nanoTime();");
-                                beforeBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, null, null});");
+                                beforeBlock.append("method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
+                                beforeBlock.append("startTime = Long.valueOf(System.nanoTime());");
+                                beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
+                                beforeBlock.append("method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, null, $args, null});");
 
-//                                endBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, System.nanoTime(), $_});");
+                                endBlock.append("stopTime = Long.valueOf(System.nanoTime());");
+                                endBlock.append("method.invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
 
                                 m.insertBefore(beforeBlock.toString());
                                 m.insertAfter(endBlock.toString());

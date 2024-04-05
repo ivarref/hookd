@@ -39,4 +39,12 @@
       methodName
       (reify Consumer
         (accept [_ java-map]
-          (f java-map))))))
+          (f (reduce-kv (fn [o k v]
+                          (assoc o (keyword k)
+                                   (cond (= "args" k)
+                                         (into [] v)
+
+                                         :else
+                                         v)))
+                        (sorted-map)
+                        (into {} java-map))))))))

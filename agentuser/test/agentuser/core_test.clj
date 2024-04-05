@@ -3,7 +3,7 @@
     [clojure.string :as str]
     [clojure.test :refer [deftest is]]
     [com.github.ivarref.hookd :as hookd])
-  (:import (com.github.ivarref SomeClass)
+  (:import (com.github.ivarref ExceptionIsThrown SomeClass)
            (com.github.ivarref.hookd JavaAgent)
            (java.lang.reflect Field)
            (java.net HttpCookie)))
@@ -107,16 +107,33 @@
           (is (= 2 @ret-count))))))
 
 
-(deftest wiretap-like
+#_(deftest wiretap-like
+    (locking lock
+      (hookd/clear! "com.github.ivarref.SomeClass")
+      (let [maps (atom #{})]
+        (hookd/install!
+          (fn [java-map]
+            (swap! maps conj java-map)
+            (prn "java-map:" java-map))
+          [["com.github.ivarref.SomeClass" "returnInt"]])
+        (let [someInst (SomeClass.)]
+          (is (= 3 (.returnInt someInst)))
+          (is (= 0 1))
+          (hookd/clear! "com.github.ivarref.SomeClass")))))
+
+(deftest wiretap-throw-exception
   (locking lock
-    (hookd/clear! "com.github.ivarref.SomeClass")
+    (hookd/clear! "com.github.ivarref.ExceptionIsThrown")
     (let [maps (atom #{})]
       (hookd/install!
         (fn [java-map]
           (swap! maps conj java-map)
           (prn "java-map:" java-map))
-        [["com.github.ivarref.SomeClass" "returnInt"]])
-      (let [someInst (SomeClass.)]
-        (is (= 3 (.returnInt someInst)))
+        [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
+      (let [someInst (ExceptionIsThrown.)]
+        (try
+          (.returnInt someInst)
+          (catch Throwable t
+            (is (some? t))))
         (is (= 0 1))
-        (hookd/clear! "com.github.ivarref.SomeClass")))))
+        (hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))
