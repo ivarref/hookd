@@ -105,3 +105,18 @@
         (hookd/clear! "com.github.ivarref.SomeClass")
         (.returnInt someInst)
         (is (= 2 @ret-count))))))
+
+
+#_(deftest wiretap-like
+    (locking lock
+      (hookd/clear! "com.github.ivarref.SomeClass")
+      (let [maps (atom #{})]
+        (hookd/install!
+          (fn [java-map]
+            (swap! maps conj java-map)
+            (prn "java-map:" java-map))
+          [["com.github.ivarref.SomeClass" "returnInt"]])
+        (let [someInst (SomeClass.)]
+          (is (= 3 (.returnInt someInst)))
+          (is (= 0 1))
+          (hookd/clear! "com.github.ivarref.SomeClass")))))

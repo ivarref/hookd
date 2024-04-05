@@ -31,3 +31,12 @@
     (reify BiConsumer
       (accept [_ t args]
         (f t (into [] args))))))
+
+(defn install! [f classes-and-methods]
+  (doseq [[className methodName] classes-and-methods]
+    (JavaAgent/addPrePost
+      className
+      methodName
+      (reify Consumer
+        (accept [_ java-map]
+          (f java-map))))))

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+echo "*** *** *** start test.sh *** *** ***"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 
@@ -23,6 +24,8 @@ cd agentuser
 rm -rf target/ || true
 
 echo "*** *** *** Start lein test *** *** ***"
-env JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true --add-opens=java.base/java.net=ALL-UNNAMED" lein test || true
+export JAVA_TOOL_OPTIONS="-XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true --add-opens=java.base/java.net=ALL-UNNAMED"
+
+lein test || true
 
 cd $DIR

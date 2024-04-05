@@ -9,6 +9,7 @@ import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.security.ProtectionDomain;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
@@ -46,9 +47,12 @@ public class JavaAgent {
     public static final ConcurrentHashMap<String, TransformConfig> ret = new ConcurrentHashMap<>();
     public static final ConcurrentHashMap<String, TransformConfig> retMod = new ConcurrentHashMap<>();
     public static final ConcurrentHashMap<String, TransformConfig> pre = new ConcurrentHashMap<>();
+    public static final ConcurrentHashMap<String, TransformConfig> prePost = new ConcurrentHashMap<>();
 
     public static class TransformConfig {
         public final ConcurrentHashMap<String, BiConsumer> consumers = new ConcurrentHashMap<>();
+
+        public final ConcurrentHashMap<String, Consumer> prePostConsumers = new ConcurrentHashMap<>();
 
         public final ConcurrentHashMap<String, BiFunction> modifiers = new ConcurrentHashMap<>();
     }
@@ -113,6 +117,15 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
+    public static synchronized void addPrePost(String clazzName, String methodName, Consumer consumer) throws Throwable {
+        if (!prePost.containsKey(clazzName)) {
+            prePost.put(clazzName, new TransformConfig());
+        }
+        TransformConfig classConfig = prePost.get(clazzName);
+        classConfig.prePostConsumers.put(methodName, consumer);
+        attachAndTransform(clazzName);
+    }
+
     public static void consumeReturn(String clazzName, String methodName, Object res) {
         BiConsumer consumer = ret.get(clazzName).consumers.get(methodName);
         if (consumer != null) {
@@ -140,6 +153,16 @@ public class JavaAgent {
             LOGGER.log(Level.SEVERE, "Agent preConsume error. No preConsume registered for " + clazzName + "/" + methodName);
         }
     }
+
+    public static void consumePrePP(String clazzName, String methodName, Object t, Object[] args) {
+        BiConsumer consumer = pre.get(clazzName).consumers.get(methodName);
+        if (consumer != null) {
+            consumer.accept(t, args);
+        } else {
+            LOGGER.log(Level.SEVERE, "Agent preConsume error. No preConsume registered for " + clazzName + "/" + methodName);
+        }
+    }
+
 
     public static void transformClass(String className, Instrumentation inst) {
         LOGGER.log(Level.FINE, "transformClass starting for " + className);
@@ -287,6 +310,33 @@ public class JavaAgent {
                         }
                     }
                 });
+            }
+
+            if (prePost.containsKey(targetClassName)) {
+                for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
+                    if (method.equalsIgnoreCase("::Constructor")) {
+                    } else {
+                        for (CtMethod m : cc.getMethods()) {
+                            if (m.getName().equals(method)) {
+                                StringBuilder beforeBlock = new StringBuilder();
+                                StringBuilder endBlock = new StringBuilder();
+                                String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
+
+                                m.addLocalVariable("startTime", CtClass.longType);
+                                m.addLocalVariable("clazz", pool.get(Class.class.getName()));
+
+                                beforeBlock.append("clazz = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader());");
+                                beforeBlock.append("startTime = System.nanoTime()");
+                                beforeBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"pre\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, null, null});");
+
+                                endBlock.append("clazz.getMethods()[0].invoke(null, new Object[] {\"post\", " + self + ", \"" + this.targetClassName + "\", \"" + method + "\", $args, startTime, System.nanoTime(), $_});");
+
+                                m.insertBefore(beforeBlock.toString());
+                                m.insertAfter(endBlock.toString());
+                            }
+                        }
+                    }
+                }
             }
 
             if (pre.containsKey(targetClassName)) {
