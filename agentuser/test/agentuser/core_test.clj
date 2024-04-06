@@ -3,7 +3,7 @@
     [clojure.string :as str]
     [clojure.test :refer [deftest is]]
     [com.github.ivarref.hookd :as hookd])
-  (:import (com.github.ivarref ExceptionIsThrown SomeClass)
+  (:import (com.github.ivarref ExceptionIsThrown RecursionClass SomeClass)
            (com.github.ivarref.hookd JavaAgent)
            (java.lang.reflect Field)
            (java.net HttpCookie)))
@@ -121,14 +121,27 @@
           (is (= 0 1))
           (hookd/clear! "com.github.ivarref.SomeClass")))))
 
+(deftest recursion-test
+  (locking lock
+    #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
+    (let [st (atom [])]
+      (hookd/install!
+        (fn [{:keys [args pre?]}]
+          (when pre?
+            (swap! st conj (first args))))
+        [["com.github.ivarref.RecursionClass" "recursion"]])
+      (let [someInst (RecursionClass.)]
+        (.recursion someInst 5)
+        (is (= [5 4 3 2 1 0] @st))))))
+
 (deftest wiretap-throw-exception
   (locking lock
     #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
     (let [maps (atom [])]
       (hookd/install!
-        (fn [java-map]
-          (swap! maps conj java-map)
-          (prn "java-map:" java-map))
+        (fn [m]
+          (swap! maps conj m)
+          (prn "java-map:" (dissoc m :error)))
         [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
       (let [someInst (ExceptionIsThrown.)]
         (try
@@ -136,4 +149,5 @@
           (catch Throwable t
             (is (some? t))))
         (is (= 2 (count @maps)))
+        (is (true? (:error? (second @maps))))
         #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))

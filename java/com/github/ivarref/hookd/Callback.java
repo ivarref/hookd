@@ -50,7 +50,7 @@ public class Callback {
         try {
             consumer.accept(map);
         } finally {
-            threadVars.get().pop();
+            threadVars.get().removeLast();
         }
     }
 
@@ -64,12 +64,12 @@ public class Callback {
         map.put("this", fromObj);
         map.put("args", args);
         map.put("error", t);
-        map.putAll(threadVars.get().peek());
+        map.putAll(threadVars.get().pollLast());
 
         try {
             consumer.accept(map);
         } finally {
-            threadVars.get().pop();
+            threadVars.get().removeLast();
         }
     }
 }

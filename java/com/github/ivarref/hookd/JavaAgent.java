@@ -14,6 +14,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.TreeSet;
@@ -50,6 +51,15 @@ public class JavaAgent {
         } finally {
             latch.get().countDown();
         }
+    }
+
+    public static void main(String[] args) {
+        System.err.println("janei");
+        ArrayDeque<String> st = new ArrayDeque<>();
+        st.add("1");
+        st.add("2");
+        System.err.println(st.removeLast());
+        System.err.println(st.removeLast());
     }
 
     public static final ConcurrentHashMap<String, TransformConfig> prePost = new ConcurrentHashMap<>();
