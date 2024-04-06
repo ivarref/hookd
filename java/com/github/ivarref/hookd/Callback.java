@@ -64,12 +64,8 @@ public class Callback {
         map.put("this", fromObj);
         map.put("args", args);
         map.put("error", t);
-        map.putAll(threadVars.get().pollLast());
+        map.putAll(threadVars.get().removeLast());
 
-        try {
-            consumer.accept(map);
-        } finally {
-            threadVars.get().removeLast();
-        }
+        consumer.accept(map);
     }
 }
