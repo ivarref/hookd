@@ -63,6 +63,7 @@ public class Callback {
         map.put("stop", stopTime.longValue());
         map.put("this", fromObj);
         map.put("args", args);
+        map.put("error", t);
         map.putAll(threadVars.get().peek());
 
         try {
