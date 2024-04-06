@@ -6,7 +6,6 @@ import java.util.function.Consumer;
 public class PreFunctionInvoke {
 
     public static Object callback(String op, Object fromObj, String clazz, String method, String id, Long startTime, Long stopTime, Object[] args, Object retVal) {
-        JavaAgent.consumePrePost(op, fromObj, clazz, method, args, retVal);
         if (!JavaAgent.prePost.containsKey(clazz)) {
             throw new RuntimeException("Could not find prepost handler for class: " + clazz);
         }
@@ -25,6 +24,7 @@ public class PreFunctionInvoke {
         map.put("start", startTime.longValue());
         map.put("args", args);
         map.put("id", id);
+        map.put("this", fromObj);
 
         if (!isPre) {
             map.put("stop", stopTime.longValue());
