@@ -124,7 +124,7 @@
 (deftest wiretap-throw-exception
   (locking lock
     #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
-    (let [maps (atom #{})]
+    (let [maps (atom [])]
       (hookd/install!
         (fn [java-map]
           (swap! maps conj java-map)
@@ -135,5 +135,5 @@
           (.returnInt someInst)
           (catch Throwable t
             (is (some? t))))
-        (is (= 0 1))
+        (is (= 2 (count @maps)))
         #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))

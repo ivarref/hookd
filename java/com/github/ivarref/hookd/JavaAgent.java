@@ -98,9 +98,7 @@ public class JavaAgent {
         try {
             targetCls = Class.forName(className);
         } catch (Throwable ex) {
-            if (!className.startsWith("NATIVE_")) {
-                LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
-            }
+            LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
         }
 
         if (targetCls != null) {
@@ -175,12 +173,9 @@ public class JavaAgent {
 
             if (prePost.containsKey(targetClassName)) {
                 for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
-                    if (method.equalsIgnoreCase("::Constructor")) {
-                    } else {
-                        for (CtMethod m : cc.getMethods()) {
-                            if (m.getName().equals(method)) {
-                                addPrePostHandler(this.targetClassName, method, m, pool);
-                            }
+                    for (CtMethod m : cc.getMethods()) {
+                        if (m.getName().equals(method)) {
+                            addPrePostHandler(this.targetClassName, method, m, pool);
                         }
                     }
                 }
@@ -204,7 +199,6 @@ public class JavaAgent {
 
     public static void addPrePostHandler(String targetClassName, String method, CtMethod m, ClassPool pool) throws CannotCompileException, NotFoundException {
         StringBuilder beforeBlock = new StringBuilder();
-        StringBuilder endBlock = new StringBuilder();
         String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
 
         m.addLocalVariable("startTime", pool.get("java.lang.Long"));
@@ -217,14 +211,16 @@ public class JavaAgent {
         beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
         beforeBlock.append("method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, null, $args, null});");
 
-        endBlock.append("stopTime = Long.valueOf(System.nanoTime());");
-        endBlock.append("method.invoke(null, new Object[] {\"post\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
         m.insertBefore(beforeBlock.toString());
-        m.insertAfter(endBlock.toString());
-
-//        m.addCatch("{" +
-//                "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
-//                "method.invoke(null, new Object[] {\"post\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, Long.valueOf(System.nanoTime()), $args, t});" +
-//                "System.err.println(\"oh noes!\"); throw t; }", pool.get("java.lang.Throwable"), "t");
+        m.insertAfter("stopTime = Long.valueOf(System.nanoTime()); "
+                + "java.lang.Class.forName(\"com.github.ivarref.hookd.PostFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
+                + ".invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, null});");
+        m.addCatch("{" +
+                "java.lang.Class.forName(\"com.github.ivarref.hookd.ExceptionFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
+                ".invoke(null, new Object[] {" + self
+                + ", \"" + targetClassName
+                + "\", \"" + method
+                + "\", Long.valueOf(System.nanoTime()), $args, t});" +
+                "throw t; }", pool.get("java.lang.Throwable"), "t");
     }
 }
