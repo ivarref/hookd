@@ -1,7 +1,7 @@
 (ns agentuser.core-test
   (:require
     [clojure.string :as str]
-    [clojure.test :refer [deftest is]]
+    [clojure.test :refer [deftest is] :as test]
     [com.github.ivarref.hookd :as hookd])
   (:import (com.github.ivarref ExceptionIsThrown RecursionClass SomeClass)
            (com.github.ivarref.hookd JavaAgent)
@@ -9,6 +9,13 @@
            (java.net HttpCookie)))
 
 (defonce lock (Object.))
+
+(defn clean-and-lock [f]
+  (locking lock
+    (hookd/uninstall!)
+    (f)))
+
+(test/use-fixtures :each clean-and-lock)
 
 #_(deftest system-test
     (locking lock
@@ -106,48 +113,49 @@
           (.returnInt someInst)
           (is (= 2 @ret-count))))))
 
+(deftest uninstall-works
+  (let [arg (atom nil)]
+    (hookd/install-post!
+      #(reset! arg %)
+      [["com.github.ivarref.SomeClass" "returnInt"]])
+    (hookd/uninstall!)
+    (let [someInst (SomeClass.)]
+      (is (= 3 (.returnInt someInst)))
+      (is (= nil @arg)))))
 
-#_(deftest wiretap-like
-    (locking lock
-      (hookd/uninstall! "com.github.ivarref.SomeClass")
-      (let [arg (atom nil)]
-        (hookd/install-post!
-          #(reset! arg %)
-          [["com.github.ivarref.SomeClass" "returnInt"]])
-        (let [someInst (SomeClass.)]
-          (is (= 3 (.returnInt someInst)))
-          (is (= 3 (:result @arg)))
-          (hookd/uninstall! "com.github.ivarref.SomeClass")))))
+(deftest wiretap-like
+  (let [arg (atom nil)]
+    (hookd/install-post!
+      #(reset! arg %)
+      [["com.github.ivarref.SomeClass" "returnInt"]])
+    (let [someInst (SomeClass.)]
+      (is (= 3 (.returnInt someInst)))
+      (is (= 3 (:result @arg))))))
 
 (deftest recursion-test
-  (locking lock
-    (hookd/uninstall! "com.github.ivarref.RecursionClass")
-    (let [st (atom [])
-          retval (atom [])]
-      (hookd/install!
-        (fn [{:keys [pre? args result]}]
-          (if pre?
-            (swap! st conj (first args))
-            (swap! retval conj result)))
-        [["com.github.ivarref.RecursionClass" "recursion"]])
-      (let [someInst (RecursionClass.)]
-        (.recursion someInst 5)
-        (is (= [0 1 2 3 4 5] @retval))
-        (is (= [5 4 3 2 1 0] @st))))))
+  (let [st (atom [])
+        retval (atom [])]
+    (hookd/install!
+      (fn [{:keys [pre? args result]}]
+        (if pre?
+          (swap! st conj (first args))
+          (swap! retval conj result)))
+      [["com.github.ivarref.RecursionClass" "recursion"]])
+    (let [someInst (RecursionClass.)]
+      (.recursion someInst 5)
+      (is (= [0 1 2 3 4 5] @retval))
+      (is (= [5 4 3 2 1 0] @st)))))
 
-#_(deftest wiretap-throw-exception
-    (locking lock
-      (hookd/uninstall! "com.github.ivarref.ExceptionIsThrown")
-      (let [maps (atom [])]
-        (hookd/install!
-          (fn [m]
-            (swap! maps conj m))
-          [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
-        (let [someInst (ExceptionIsThrown.)]
-          (try
-            (.returnInt someInst)
-            (catch Throwable t
-              (is (some? t))))
-          (is (= 2 (count @maps)))
-          (is (true? (:error? (second @maps))))
-          (hookd/uninstall! "com.github.ivarref.ExceptionIsThrown")))))
+(deftest wiretap-throw-exception
+  (let [maps (atom [])]
+    (hookd/install!
+      (fn [m]
+        (swap! maps conj m))
+      [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
+    (let [someInst (ExceptionIsThrown.)]
+      (try
+        (.returnInt someInst)
+        (catch Throwable t
+          (is (some? t))))
+      (is (= 2 (count @maps)))
+      (is (true? (:error? (second @maps)))))))

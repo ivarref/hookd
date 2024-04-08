@@ -2,33 +2,22 @@ package com.github.ivarref.hookd;
 
 import com.sun.tools.attach.VirtualMachine;
 import javassist.*;
-import javassist.bytecode.*;
-import javassist.compiler.CompileError;
-import javassist.compiler.Javac;
-import javassist.expr.ExprEditor;
-import javassist.expr.MethodCall;
 
-import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Pattern;
 
 public class JavaAgent {
 
@@ -73,6 +62,13 @@ public class JavaAgent {
             prePost.remove(clazz);
         }
         attachAndTransform(clazz);
+    }
+
+    public static void clearAll() throws Throwable {
+        List<String> clazzes = prePost.keySet().stream().toList();
+        for (String clazz : clazzes) {
+            clear(clazz);
+        }
     }
 
     public static void attachAndTransform(String clazz) throws Throwable {

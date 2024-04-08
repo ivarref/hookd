@@ -3,9 +3,6 @@
   (:import (com.github.ivarref.hookd JavaAgent)
            (java.util.function Consumer)))
 
-(defn uninstall! [className]
-  (JavaAgent/clear className))
-
 (s/def :hookd/pre? boolean?)
 (s/def :hookd/post? boolean?)
 (s/def :hookd/error? boolean?)
@@ -56,6 +53,12 @@
                             "this" nil
                             "error" (Exception. "boom")
                             "stop" 20}))
+
+(defn uninstall!
+  ([]
+   (JavaAgent/clearAll))
+  ([className]
+   (JavaAgent/clear className)))
 
 (defn install! [f classes-and-methods]
   (doseq [[className methodName] classes-and-methods]
