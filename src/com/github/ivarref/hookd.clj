@@ -42,7 +42,9 @@
                                               (sorted-map)
                                               (into {} java-str-map))]
     (cond-> m
-            stop (assoc :spent-ns (- stop start)))))
+            stop (assoc :spent-ns (- stop start))
+            stop (assoc :spent-ms (long (/ (- stop start)
+                                           1000000))))))
 
 (comment
   (produce-wiretap-ctx-map {"pre?"  true
