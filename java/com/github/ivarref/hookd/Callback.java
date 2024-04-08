@@ -12,11 +12,11 @@ public class Callback {
     private static final Logger LOGGER = Logger.getLogger(Callback.class.getName());;
 
     public static Consumer getConsumer(String clazz, String method) {
-        if (!JavaAgent.prePost.containsKey(clazz)) {
+        if (!State.prePost.containsKey(clazz)) {
             throw new RuntimeException("Could not find prepost handler for class: " + clazz);
         }
 
-        JavaAgent.TransformConfig cfg = JavaAgent.prePost.get(clazz);
+        JavaAgent.TransformConfig cfg = State.prePost.get(clazz);
         if (!cfg.prePostConsumers.containsKey(method)) {
             throw new RuntimeException("Could not find prepost handler for class and method: " + clazz + " : " + method);
         }

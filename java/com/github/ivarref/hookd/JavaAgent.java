@@ -14,35 +14,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.github.ivarref.hookd.State.*;
+
 public class JavaAgent {
 
     private static final Logger LOGGER = Logger.getLogger(JavaAgent.class.getName());
-
-    public static void premain(String agentArgs, Instrumentation inst) {
-        LOGGER.log(Level.INFO, "Agent premain doing nothing");
-    }
-
-    public static final AtomicReference<String> classNameInput = new AtomicReference();
-    public static final AtomicReference<CountDownLatch> latch = new AtomicReference<>();
-    public static final AtomicReference<Throwable> error = new AtomicReference<>();
-
-    public static void agentmain(String agentArgs, Instrumentation inst) {
-        try {
-            error.set(null);
-            transformClass(classNameInput.get(), inst);
-        } catch (Throwable t) {
-            error.set(t);
-        } finally {
-            latch.get().countDown();
-        }
-    }
-
-    public static final ConcurrentHashMap<String, TransformConfig> prePost = new ConcurrentHashMap<>();
 
     public static class TransformConfig {
         public final ConcurrentHashMap<String, Consumer> prePostConsumers = new ConcurrentHashMap<>();
