@@ -3,6 +3,7 @@ package com.github.ivarref.hookd;
 import com.sun.tools.attach.VirtualMachine;
 import javassist.*;
 
+import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
@@ -66,15 +67,27 @@ public class JavaAgent {
         latch.set(new CountDownLatch(1));
         classNameInput.set(clazz);
         VirtualMachine jvm = VirtualMachine.attach(ProcessHandle.current().pid() + "");
-        jvm.loadAgent(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().getFile());
-        jvm.detach();
-        if (false == latch.get().await(60, TimeUnit.SECONDS)) {
-            String msg = "Timeout waiting for JavaAgent to finish";
-            LOGGER.log(Level.SEVERE, msg);
-            throw new RuntimeException(msg);
-        } else {
-            if (error.get() != null) {
-                throw error.get();
+        File tempFile = File.createTempFile("hookd-agent-", "jar");
+        try (OutputStream fos = new BufferedOutputStream(new FileOutputStream(tempFile));
+             InputStream in = new BufferedInputStream(JavaAgent.class.getClassLoader().getResourceAsStream("com/github/ivarref/hookd.bin.jar"))) {
+            in.transferTo(fos);
+            fos.flush();
+            jvm.loadAgent(tempFile.getAbsolutePath());
+            jvm.detach();
+            if (false == latch.get().await(60, TimeUnit.SECONDS)) {
+                String msg = "Timeout waiting for JavaAgent to finish";
+                LOGGER.log(Level.SEVERE, msg);
+                throw new RuntimeException(msg);
+            } else {
+                if (error.get() != null) {
+                    throw error.get();
+                }
+            }
+        } finally {
+            try {
+                tempFile.delete();
+            } catch (Throwable t) {
+
             }
         }
     }
