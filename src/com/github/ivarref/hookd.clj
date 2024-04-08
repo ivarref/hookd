@@ -10,6 +10,7 @@
 (s/def :hookd/start int?)
 (s/def :hookd/stop int?)
 (s/def :hookd/spent-ns int?)
+(s/def :hookd/spent-ms int?)
 (s/def :hookd/args vector?)
 (s/def :hookd/id string?)
 
@@ -27,7 +28,8 @@
                :hookd/error?
                :hookd/error
                :hookd/result
-               :hookd/spent-ns])))
+               :hookd/spent-ns
+               :hookd/spent-ms])))
 
 (defn produce-wiretap-ctx-map
   [java-str-map]
