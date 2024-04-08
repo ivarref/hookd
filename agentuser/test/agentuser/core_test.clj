@@ -119,17 +119,20 @@
           (is (= 3 (:result @arg)))
           (hookd/uninstall! "com.github.ivarref.SomeClass")))))
 
-
 (deftest recursion-test
   (locking lock
     (hookd/uninstall! "com.github.ivarref.RecursionClass")
-    (let [st (atom [])]
-      (hookd/install-pre!
-        (fn [{:keys [args]}]
-          (swap! st conj (first args)))
+    (let [st (atom [])
+          retval (atom [])]
+      (hookd/install!
+        (fn [{:keys [pre? args result]}]
+          (if pre?
+            (swap! st conj (first args))
+            (swap! retval conj result)))
         [["com.github.ivarref.RecursionClass" "recursion"]])
       (let [someInst (RecursionClass.)]
         (.recursion someInst 5)
+        (is (= [0 1 2 3 4 5] @retval))
         (is (= [5 4 3 2 1 0] @st))))))
 
 #_(deftest wiretap-throw-exception

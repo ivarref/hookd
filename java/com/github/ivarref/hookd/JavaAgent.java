@@ -225,7 +225,7 @@ public class JavaAgent {
         m.insertBefore(beforeBlock.toString());
         m.insertAfter("stopTime = Long.valueOf(System.nanoTime()); "
                 + "java.lang.Class.forName(\"com.github.ivarref.hookd.PostFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
-                + ".invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, $_});");
+                + ".invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, ($w)$_});");
         m.addCatch("{" +
                 "java.lang.Class.forName(\"com.github.ivarref.hookd.ExceptionFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
                 ".invoke(null, new Object[] {" + self
