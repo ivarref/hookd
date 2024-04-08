@@ -5,7 +5,6 @@
 (defn clear! [className]
   (JavaAgent/clear className))
 
-
 (defn install! [f classes-and-methods]
   (doseq [[className methodName] classes-and-methods]
     (JavaAgent/addPrePost

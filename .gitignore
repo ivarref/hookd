@@ -20,3 +20,4 @@ agentuser/target/
 agentuser/*.iml
 agentuser/.clj-kondo/
 agentuser/.lein-failures
+agentuser/.nrepl-port

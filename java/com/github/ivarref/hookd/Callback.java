@@ -4,9 +4,12 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class Callback {
     public static final ThreadLocal<ArrayDeque<Map<String, Object>>> threadVars = ThreadLocal.withInitial(() -> new ArrayDeque<>());
+    private static final Logger LOGGER = Logger.getLogger(Callback.class.getName());;
 
     public static Consumer getConsumer(String clazz, String method) {
         if (!JavaAgent.prePost.containsKey(clazz)) {
@@ -33,7 +36,12 @@ public class Callback {
 
         threadVars.get().add(map);
 
-        consumer.accept(map);
+        try {
+            consumer.accept(map);
+        } catch (Throwable t) {
+            LOGGER.log(Level.SEVERE, "pre callback failed with message: " + t.getMessage(), t);
+            throw t;
+        }
     }
 
     public static void enterPost(Object fromObj, String clazz, String method, String id, Long startTime, Long stopTime, Object[] args) {
@@ -49,12 +57,15 @@ public class Callback {
 
         try {
             consumer.accept(map);
+        } catch (Throwable t) {
+            LOGGER.log(Level.SEVERE, "post callback failed with message: " + t.getMessage(), t);
+            throw t;
         } finally {
             threadVars.get().removeLast();
         }
     }
 
-    public static void enterException(Object fromObj, String clazz, String method, Long stopTime, Object[] args, Throwable t) {
+    public static void enterException(Object fromObj, String clazz, String method, Long stopTime, Object[] args, Throwable tt) {
         Consumer consumer = getConsumer(clazz, method);
         HashMap<String, Object> map = new HashMap<>();
         map.put("pre?", false);
@@ -63,9 +74,14 @@ public class Callback {
         map.put("stop", stopTime.longValue());
         map.put("this", fromObj);
         map.put("args", args);
-        map.put("error", t);
+        map.put("error", tt);
         map.putAll(threadVars.get().removeLast());
 
-        consumer.accept(map);
+        try {
+            consumer.accept(map);
+        } catch (Throwable t) {
+            LOGGER.log(Level.SEVERE, "post exception callback failed with message: " + t.getMessage(), t);
+            throw t;
+        }
     }
 }
