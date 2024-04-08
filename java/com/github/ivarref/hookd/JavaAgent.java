@@ -8,6 +8,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -55,7 +56,7 @@ public class JavaAgent {
     }
 
     public static void clearAll() throws Throwable {
-        List<String> clazzes = prePost.keySet().stream().toList();
+        List<String> clazzes = new ArrayList<>(prePost.keySet());
         for (String clazz : clazzes) {
             clear(clazz);
         }
