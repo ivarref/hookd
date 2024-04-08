@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.10.3"]
                  [org.javassist/javassist "3.30.2-GA"]]
   :java-source-paths ["java"]
+  :javac-options ["-target" "1.6"]
   :repl-options {:init-ns agent.core})
