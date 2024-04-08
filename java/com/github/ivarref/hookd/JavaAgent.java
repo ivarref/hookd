@@ -140,6 +140,7 @@ public class JavaAgent {
             }
         } catch (Throwable ex) {
             errorTransform.add(clazz.getName());
+            ex.printStackTrace();
             throw new RuntimeException("Agent transform failed for: [" + clazz.getName() + "]", ex);
         }
     }
