@@ -130,7 +130,8 @@
       [["com.github.ivarref.SomeClass" "returnInt"]])
     (let [someInst (SomeClass.)]
       (is (= 3 (.returnInt someInst)))
-      (is (= 3 (:result @arg))))))
+      (is (= 3 (:result @arg)))
+      (is (int? (:spent-ns @arg))))))
 
 (deftest recursion-test
   (let [st (atom [])
@@ -147,15 +148,18 @@
       (is (= [5 4 3 2 1 0] @st)))))
 
 (deftest wiretap-throw-exception
-  (let [maps (atom [])]
-    (hookd/install!
+  (let [ctx (atom nil)]
+    (hookd/install-post!
       (fn [m]
-        (swap! maps conj m))
+        (reset! ctx m))
       [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
-    (let [someInst (ExceptionIsThrown.)]
+    (let [someInst (ExceptionIsThrown.)
+          exception-is-re-thrown (atom false)]
       (try
         (.returnInt someInst)
         (catch Throwable t
+          (reset! exception-is-re-thrown true)
           (is (some? t))))
-      (is (= 2 (count @maps)))
-      (is (true? (:error? (second @maps)))))))
+      (is (true? @exception-is-re-thrown))
+      (is (instance? Throwable (:error @ctx)))
+      (is (true? (:error? @ctx))))))

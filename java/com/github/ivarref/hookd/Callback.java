@@ -69,6 +69,7 @@ public class Callback {
     public static void enterException(Object fromObj, String clazz, String method, Long stopTime, Object[] args, Throwable tt) {
         Consumer consumer = getConsumer(clazz, method);
         HashMap<String, Object> map = new HashMap<>();
+        map.putAll(threadVars.get().removeLast());
         map.put("pre?", false);
         map.put("post?", true);
         map.put("error?", true);
@@ -76,7 +77,6 @@ public class Callback {
         map.put("this", fromObj);
         map.put("args", args);
         map.put("error", tt);
-        map.putAll(threadVars.get().removeLast());
 
         try {
             consumer.accept(map);
