@@ -44,7 +44,7 @@ public class Callback {
         }
     }
 
-    public static void enterPost(Object fromObj, String clazz, String method, String id, Long startTime, Long stopTime, Object[] args) {
+    public static void enterPost(Object fromObj, String clazz, String method, String id, Long startTime, Long stopTime, Object[] args, Object retVal) {
         Consumer consumer = getConsumer(clazz, method);
         HashMap<String, Object> map = new HashMap<>();
         map.put("pre?", false);
@@ -54,6 +54,7 @@ public class Callback {
         map.put("args", args);
         map.put("id", id);
         map.put("this", fromObj);
+        map.put("result", retVal);
 
         try {
             consumer.accept(map);

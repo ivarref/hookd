@@ -107,47 +107,47 @@
           (is (= 2 @ret-count))))))
 
 
-#_(deftest wiretap-like
+(deftest wiretap-like
+  (locking lock
+    (hookd/uninstall! "com.github.ivarref.SomeClass")
+    (let [arg (atom nil)]
+      (hookd/install-post!
+        #(reset! arg %)
+        [["com.github.ivarref.SomeClass" "returnInt"]])
+      (let [someInst (SomeClass.)]
+        (is (= 3 (.returnInt someInst)))
+        (prn @arg)
+        (is (= 3 (:result @arg)))
+        (hookd/uninstall! "com.github.ivarref.SomeClass")))))
+
+
+#_(deftest recursion-test
     (locking lock
-      (hookd/clear! "com.github.ivarref.SomeClass")
-      (let [maps (atom #{})]
+      #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
+      (let [st (atom [])]
         (hookd/install!
-          (fn [java-map]
-            (swap! maps conj java-map)
-            (prn "java-map:" java-map))
-          [["com.github.ivarref.SomeClass" "returnInt"]])
-        (let [someInst (SomeClass.)]
-          (is (= 3 (.returnInt someInst)))
-          (is (= 0 1))
-          (hookd/clear! "com.github.ivarref.SomeClass")))))
+          (fn [{:keys [args pre?]}]
+            (when pre?
+              (swap! st conj (first args))))
+          [["com.github.ivarref.RecursionClass" "recursion"]])
+        (let [someInst (RecursionClass.)]
+          (.recursion someInst 5)
+          (is (= [5 4 3 2 1 0] @st))))))
 
-(deftest recursion-test
-  (locking lock
-    #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
-    (let [st (atom [])]
-      (hookd/install!
-        (fn [{:keys [args pre?]}]
-          (when pre?
-            (swap! st conj (first args))))
-        [["com.github.ivarref.RecursionClass" "recursion"]])
-      (let [someInst (RecursionClass.)]
-        (.recursion someInst 5)
-        (is (= [5 4 3 2 1 0] @st))))))
-
-(deftest wiretap-throw-exception
-  (locking lock
-    #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
-    (let [maps (atom [])]
-      (hookd/install!
-        (fn [m]
-          (swap! maps conj m)
-          (prn "java-map:" (dissoc m :error)))
-        [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
-      (let [someInst (ExceptionIsThrown.)]
-        (try
-          (.returnInt someInst)
-          (catch Throwable t
-            (is (some? t))))
-        (is (= 2 (count @maps)))
-        (is (true? (:error? (second @maps))))
-        #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))
+#_(deftest wiretap-throw-exception
+    (locking lock
+      #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")
+      (let [maps (atom [])]
+        (hookd/install!
+          (fn [m]
+            (swap! maps conj m)
+            (prn "java-map:" (dissoc m :error)))
+          [["com.github.ivarref.ExceptionIsThrown" "returnInt"]])
+        (let [someInst (ExceptionIsThrown.)]
+          (try
+            (.returnInt someInst)
+            (catch Throwable t
+              (is (some? t))))
+          (is (= 2 (count @maps)))
+          (is (true? (:error? (second @maps))))
+          #_(hookd/clear! "com.github.ivarref.ExceptionIsThrown")))))
