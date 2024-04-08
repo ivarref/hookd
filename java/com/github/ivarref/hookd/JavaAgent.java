@@ -206,12 +206,12 @@ public class JavaAgent {
         beforeBlock.append("method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
         beforeBlock.append("startTime = Long.valueOf(System.nanoTime());");
         beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
-        beforeBlock.append("method.invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, null, $args, null});");
+        beforeBlock.append("method.invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, $args});");
 
         m.insertBefore(beforeBlock.toString());
         m.insertAfter("stopTime = Long.valueOf(System.nanoTime()); "
                 + "java.lang.Class.forName(\"com.github.ivarref.hookd.PostFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
-                + ".invoke(null, new Object[] {\"pre\", " + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, ($w)$_});");
+                + ".invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, ($w)$_});");
         m.addCatch("{" +
                 "java.lang.Class.forName(\"com.github.ivarref.hookd.ExceptionFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
                 ".invoke(null, new Object[] {" + self
