@@ -73,7 +73,26 @@
         (accept [_ java-map]
           (f (produce-wiretap-ctx-map java-map)))))))
 
-(defn install-post! [f classes-and-methods]
+(defn install-post!
+  "Like `install!` but ensures that `f` is only called **post** invocation.
+
+   The following contextual data is will **always** be present in the map passed
+   to `f`:
+
+   | Key         | Value                                                            |
+   | ----------- | ---------------------------------------------------------------- |
+   | `:id`       | Uniquely identifies the call. Same value for pre and post calls. |
+   | `:args`     | The seq of args that value of `:function` will be applied to.    |
+   | `:start`    | Nanoseconds since some fixed but arbitrary origin time.          |
+   | `:post?`    | `true`                                                           |
+   | `:stop`     | Nanoseconds since some fixed but arbitrary origin time.          |
+   | `:spent-ns` | Number of nanoseconds elapsed.                                   |
+   | `:spent-ms` | Number of milliseconds elapsed. Coerced to long.                 |
+   | `:result`   | The result of applying the value of `:function` to `:args`.      |
+   | `:error`    | Any exception caught during computation of the result.           |
+   | `:error?`   | True if an exception was thrown.                                 |
+   | `:this`     | The object `this`. Will be nil for static methods.               |"
+  [f classes-and-methods]
   (install! #(when (:post? %) (f %)) classes-and-methods))
 
 (defn install-pre! [f classes-and-methods]
