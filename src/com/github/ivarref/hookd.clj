@@ -82,7 +82,7 @@
    | Key         | Value                                                            |
    | ----------- | ---------------------------------------------------------------- |
    | `:id`       | Uniquely identifies the call. Same value for pre and post calls. |
-   | `:args`     | The seq of args that value of `:function` will be applied to.    |
+   | `:args`     | The vector of args                                               |
    | `:start`    | Nanoseconds since some fixed but arbitrary origin time.          |
    | `:post?`    | `true`                                                           |
    | `:stop`     | Nanoseconds since some fixed but arbitrary origin time.          |
@@ -95,5 +95,18 @@
   [f classes-and-methods]
   (install! #(when (:post? %) (f %)) classes-and-methods))
 
-(defn install-pre! [f classes-and-methods]
+(defn install-pre!
+  "Like `install!` but ensures that `f` is only called **pre** invocation.
+
+   The following contextual data is will **always** be present in the map passed
+   to `f`:
+
+   | Key         | Value                                                            |
+   | ----------- | ---------------------------------------------------------------- |
+   | `:id`       | Uniquely identifies the call. Same value for pre and post calls. |
+   | `:args`     | The vector of args                                               |
+   | `:start`    | Nanoseconds since some fixed but arbitrary origin time.          |
+   | `:pre?`     | `true`                                                           |
+   | `:this`     | The object `this`. Will be nil for static methods.               |"
+  [f classes-and-methods]
   (install! #(when (:pre? %) (f %)) classes-and-methods))
