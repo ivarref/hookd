@@ -8,5 +8,6 @@
   :java-source-paths ["java"]
   :jvm-opts ["-XX:+EnableDynamicAgentLoading"
              "-Djdk.attach.allowAttachSelf=true"
+             "-Dhookd.stacktraces=false"
              "--add-opens=java.base/java.net=ALL-UNNAMED"]
   :repl-options {:init-ns agentuser.core})

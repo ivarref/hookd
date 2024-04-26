@@ -100,14 +100,14 @@ public class JavaAgent {
         attachAndTransform(clazzName);
     }
 
-    public static void transformClass(String className, Instrumentation inst) {
+    public static void transformClass(String className, Instrumentation inst) throws Throwable {
         LOGGER.log(Level.FINE, "transformClass starting for " + className);
         Class<?> targetCls = null;
         ClassLoader targetClassLoader = null;
         try {
             targetCls = Class.forName(className);
         } catch (Throwable ex) {
-            LOGGER.log(Level.WARNING, "Agent: class not found with Class.forName for class: " + className);
+            throw new RuntimeException("hookd JavaAgent: class not found with Class.forName for class:" + className);
         }
 
         if (targetCls != null) {
@@ -121,26 +121,37 @@ public class JavaAgent {
     public static final ConcurrentSkipListSet<String> okTransform = new ConcurrentSkipListSet<>();
     public static final ConcurrentSkipListSet<String> errorTransform = new ConcurrentSkipListSet<>();
 
-    public static void transform(String originClass, Class<?> clazz, ClassLoader classLoader, Instrumentation instrumentation) {
-        if (false == transformers.containsKey(clazz.getName())) {
-            ClassTransformer dt = new ClassTransformer(clazz.getName(), classLoader);
-            transformers.put(clazz.getName(), dt);
-            instrumentation.addTransformer(dt, true);
-        }
+    public static void transform(String originClass, Class<?> clazz, ClassLoader classLoader, Instrumentation instrumentation) throws Throwable {
+        boolean initial = false == transformers.containsKey(clazz.getName());
+        ClassTransformer dt = transformers.computeIfAbsent(clazz.getName(), s -> new ClassTransformer(clazz.getName(), classLoader));
+        dt.transformError.set(null);
         try {
-            instrumentation.retransformClasses(clazz);
-            okTransform.add(clazz.getName());
-        } catch (UnmodifiableClassException uce) {
-            errorTransform.add(clazz.getName());
-            if (originClass.startsWith("NATIVE_")) {
-                LOGGER.log(Level.FINE, "UnmodifiableClassException for class " + clazz.getName());
-            } else {
-                throw new RuntimeException(uce);
+            if (initial) {
+                instrumentation.addTransformer(dt, true);
             }
-        } catch (Throwable ex) {
-            errorTransform.add(clazz.getName());
-            ex.printStackTrace();
-            throw new RuntimeException("Agent transform failed for: [" + clazz.getName() + "]", ex);
+            try {
+                instrumentation.retransformClasses(clazz);
+                okTransform.add(clazz.getName());
+            } catch (UnmodifiableClassException uce) {
+                errorTransform.add(clazz.getName());
+                if (originClass.startsWith("NATIVE_")) {
+                    LOGGER.log(Level.FINE, "UnmodifiableClassException for class " + clazz.getName());
+                } else {
+                    throw new RuntimeException(uce);
+                }
+            } catch (Throwable ex) {
+                errorTransform.add(clazz.getName());
+                if (ex instanceof RuntimeException) {
+                    throw ex;
+                } else {
+                    throw new RuntimeException("Agent transform failed for: [" + clazz.getName() + "]", ex);
+                }
+            }
+        } finally {
+            Throwable tError = dt.transformError.get();
+            if (tError != null) {
+                throw tError;
+            }
         }
     }
 
@@ -151,6 +162,7 @@ public class JavaAgent {
     public static class ClassTransformer implements ClassFileTransformer {
         private final String targetClassName;
         private final ClassLoader targetClassLoader;
+        public final AtomicReference<Throwable> transformError = new AtomicReference<>();
 
         public ClassTransformer(String targetClassName, ClassLoader targetClassLoader) {
             this.targetClassName = targetClassName;
@@ -183,15 +195,21 @@ public class JavaAgent {
 
             if (prePost.containsKey(targetClassName)) {
                 for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
+                    boolean found = false;
                     for (CtConstructor c : cc.getConstructors()) {
                         if (c.getName().equals(method)) {
                             addPrePostHandler(this.targetClassName, method, c, pool);
+                            found = true;
                         }
                     }
                     for (CtMethod m : cc.getMethods()) {
                         if (m.getName().equals(method)) {
                             addPrePostHandler(this.targetClassName, method, m, pool);
+                            found = true;
                         }
+                    }
+                    if (!found) {
+                        throw new RuntimeException("hookd JavaAgent: method " + method + " not found for class " + this.targetClassName);
                     }
                 }
             }
@@ -205,9 +223,18 @@ public class JavaAgent {
         public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) {
             try {
                 return throwingTransform(loader, className, classBeingRedefined, protectionDomain, classfileBuffer);
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Could not transform class " + className, e);
-                throw new RuntimeException(e);
+            } catch (Throwable t) {
+                if ("true".equalsIgnoreCase(System.getProperty("hookd.stacktraces", "true"))) {
+                    LOGGER.log(Level.SEVERE, "Could not transform class " + className + ": " + t.getMessage(), t);
+                } else {
+                    LOGGER.log(Level.SEVERE, "Could not transform class " + className + ": " + t.getMessage());
+                }
+                transformError.set(t);
+                if (t instanceof RuntimeException) {
+                    throw (RuntimeException) t;
+                } else {
+                    throw new RuntimeException(t);
+                }
             }
         }
     }

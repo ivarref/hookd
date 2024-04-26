@@ -188,3 +188,23 @@
       (is (some? @ctx))
       (is (some? (:error @ctx)))
       (is (nil? someInst)))))
+
+(deftest throw-on-unknown-class
+  (try
+    (hookd/install!
+      (fn [_]
+        nil)
+      [["com.github.ivarref.MissingClass" "MissingMethod"]])
+    (is false "Expected exception!")
+    (catch RuntimeException rte
+      (is (instance? RuntimeException rte)))))
+
+(deftest throw-on-unknown-method
+  (try
+    (hookd/install!
+      (fn [_]
+        nil)
+      [["com.github.ivarref.SomeClass" "MissingMethod"]])
+    (is false "Expected exception!")
+    (catch RuntimeException rte
+      (is (instance? RuntimeException rte)))))
