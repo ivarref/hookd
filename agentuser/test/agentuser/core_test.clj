@@ -3,7 +3,7 @@
     [clojure.string :as str]
     [clojure.test :refer [deftest is] :as test]
     [com.github.ivarref.hookd :as hookd])
-  (:import (com.github.ivarref ExceptionIsThrown RecursionClass SomeClass)
+  (:import (com.github.ivarref ConstructorThrows ExceptionIsThrown RecursionClass SomeClass)
            (com.github.ivarref.hookd JavaAgent)
            (java.lang.reflect Field)
            (java.net HttpCookie)))
@@ -163,3 +163,28 @@
       (is (true? @exception-is-re-thrown))
       (is (instance? Throwable (:error @ctx)))
       (is (true? (:error? @ctx))))))
+
+(deftest constructor-test
+  (let [ctx (promise)]
+    (hookd/install-post!
+      (fn [m]
+        (deliver ctx m))
+      [["com.github.ivarref.SomeClass" "SomeClass"]])
+    (let [someInst (SomeClass.)]
+      (is (some? @ctx))
+      (is (= someInst (:this @ctx)))
+      (is (= someInst (:result @ctx))))))
+
+(deftest constructor-throws
+  (let [ctx (promise)]
+    (hookd/install-post!
+      (fn [m]
+        (deliver ctx m))
+      [["com.github.ivarref.ConstructorThrows" "ConstructorThrows"]])
+    (let [someInst (try
+                     (ConstructorThrows. true)
+                     (catch Exception _
+                       nil))]
+      (is (some? @ctx))
+      (is (some? (:error @ctx)))
+      (is (nil? someInst)))))

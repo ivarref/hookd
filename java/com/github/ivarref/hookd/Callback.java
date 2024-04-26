@@ -44,25 +44,22 @@ public class Callback {
         }
     }
 
-    public static void enterPost(Object fromObj, String clazz, String method, String id, Long startTime, Long stopTime, Object[] args, Object retVal) {
+    public static void enterPost(Object fromObj, String clazz, String method, Long stopTime, Object[] args, boolean isConstructor, Object retVal) {
         Consumer consumer = getConsumer(clazz, method);
         HashMap<String, Object> map = new HashMap<>();
+        map.putAll(threadVars.get().removeLast());
         map.put("pre?", false);
         map.put("post?", true);
-        map.put("start", startTime.longValue());
         map.put("stop", stopTime.longValue());
         map.put("args", args);
-        map.put("id", id);
         map.put("this", fromObj);
-        map.put("result", retVal);
+        map.put("result", isConstructor ? fromObj : retVal);
 
         try {
             consumer.accept(map);
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "post callback failed with message: " + t.getMessage(), t);
             throw t;
-        } finally {
-            threadVars.get().removeLast();
         }
     }
 

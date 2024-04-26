@@ -7,7 +7,6 @@ import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
-import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.List;
@@ -184,6 +183,11 @@ public class JavaAgent {
 
             if (prePost.containsKey(targetClassName)) {
                 for (String method : prePost.get(targetClassName).prePostConsumers.keySet()) {
+                    for (CtConstructor c : cc.getConstructors()) {
+                        if (c.getName().equals(method)) {
+                            addPrePostHandler(this.targetClassName, method, c, pool);
+                        }
+                    }
                     for (CtMethod m : cc.getMethods()) {
                         if (m.getName().equals(method)) {
                             addPrePostHandler(this.targetClassName, method, m, pool);
@@ -208,24 +212,20 @@ public class JavaAgent {
         }
     }
 
-    public static void addPrePostHandler(String targetClassName, String method, CtMethod m, ClassPool pool) throws CannotCompileException, NotFoundException {
-        StringBuilder beforeBlock = new StringBuilder();
+    public static void addPrePostHandler(String targetClassName, String method, CtBehavior m, ClassPool pool) throws CannotCompileException, NotFoundException {
         String self = ((m.getModifiers() & Modifier.STATIC) != 0) ? "null" : "this";
-
-        m.addLocalVariable("startTime", pool.get("java.lang.Long"));
-        m.addLocalVariable("stopTime", pool.get("java.lang.Long"));
-        m.addLocalVariable("id", pool.get("java.lang.String"));
-        m.addLocalVariable("method", pool.get(Method.class.getName()));
-
-        beforeBlock.append("method = java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0];");
-        beforeBlock.append("startTime = Long.valueOf(System.nanoTime());");
-        beforeBlock.append("id = java.util.UUID.randomUUID().toString();");
-        beforeBlock.append("method.invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, $args});");
-
-        m.insertBefore(beforeBlock.toString());
-        m.insertAfter("stopTime = Long.valueOf(System.nanoTime()); "
-                + "java.lang.Class.forName(\"com.github.ivarref.hookd.PostFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
-                + ".invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", id, startTime, stopTime, $args, ($w)$_});");
+        String beforeBlock = "java.lang.Class.forName(\"com.github.ivarref.hookd.PreFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
+                + ".invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", java.util.UUID.randomUUID().toString(), Long.valueOf(System.nanoTime()), $args});";
+        String isConstructor = m instanceof CtConstructor ? "Boolean.TRUE" : "Boolean.FALSE";
+        String afterBlock = "java.lang.Class.forName(\"com.github.ivarref.hookd.PostFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]"
+                + ".invoke(null, new Object[] {" + self + ", \"" + targetClassName + "\", \"" + method + "\", Long.valueOf(System.nanoTime()), $args, " + isConstructor + ", ($w)$_});";
+        if (m instanceof CtConstructor) {
+            CtConstructor c = (CtConstructor) m;
+            c.insertBeforeBody(beforeBlock);
+        } else {
+            m.insertBefore(beforeBlock);
+        }
+        m.insertAfter(afterBlock);
         m.addCatch("{" +
                 "java.lang.Class.forName(\"com.github.ivarref.hookd.ExceptionFunctionInvoke\", true, java.lang.Thread.currentThread().getContextClassLoader()).getMethods()[0]" +
                 ".invoke(null, new Object[] {" + self
